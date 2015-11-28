@@ -1,0 +1,4 @@
+{
+  "dburl": "postgresql://postgres:postgres@localhost:5432/fishpassage",
+  "schema": "whse_basemapping"
+}

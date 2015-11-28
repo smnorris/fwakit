@@ -1,0 +1,61 @@
+{
+  "url": "ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public/FWA_BC.gdb.zip",
+  "file": "FWA_BC.gdb.zip",
+  "layers": [{
+    "alias": "edge_type_codes",
+    "id": "edge_type",
+    "fields": [],
+    "table": "fwa_edge_type_codes"
+  }, {
+    "alias": "obstructions",
+    "id": "obstruction_id",
+    "fields": [
+      "linear_feature_id",
+      "blue_line_key",
+      "watershed_key",
+      "obstruction_type",
+      "watershed_group_code",
+      "gnis_name"
+    ],
+    "table": "fwa_obstructions_sp"
+  }, {
+    "alias": "streams",
+    "id": "linear_feature_id",
+    "fields": [
+      "edge_type",
+      "blue_line_key",
+      "watershed_key",
+      "waterbody_key",
+      "watershed_group_code",
+      "gnis_name"
+    ],
+    "table": "fwa_stream_networks_sp"
+  }, {
+    "alias": "streams_20k_50k",
+    "id": "stream_20k_50k_id",
+    "fields": [
+      "watershed_group_id_20k",
+      "linear_feature_id_20k"
+    ],
+    "table": "fwa_streams_20k_50k"
+  }, {
+    "alias": "waterbodies_20k_50k",
+    "id": "waterbody_20k_50k_id",
+    "fields": [
+      "waterbody_type_20k",
+      "watershed_group_id_20k",
+      "waterbody_poly_id_20k"
+    ],
+    "table": "fwa_waterbodies_20k_50k"
+  }, {
+    "alias": "waterbody_type_codes",
+    "id": "waterbody_type",
+    "fields": [],
+    "table": "fwa_waterbody_type_codes"
+  }, {
+    "alias": "groups",
+    "id": "watershed_group_id",
+    "fields": ["watershed_group_code"],
+    "table": "fwa_watershed_groups_poly"
+  }]
+}
