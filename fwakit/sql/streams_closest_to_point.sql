@@ -35,3 +35,4 @@ FROM
    FROM closest_candidates cc, pt
   WHERE ST_Distance(cc.geom, pt.geom) < %s) as foo
 GROUP BY fwa_watershed_code
+ORDER BY distance_to_stream

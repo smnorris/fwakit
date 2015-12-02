@@ -12,8 +12,11 @@ import json
 import re
 import datetime
 
-import pgdb
+import sqlalchemy
 from sqlalchemy.dialects.postgresql import INTEGER, BIGINT
+
+import pgdb
+
 
 PROCESS_LOG_INTERVAL = 100
 
@@ -152,6 +155,35 @@ class FWA(object):
                 self.db[table].create_index(column_lookup[column],
                                             index_type=index_type)
 
+    def get_events(self, table, pk, filters=None, param=None):
+        """
+        Return blue line key event info from supplied event table
+
+        table      - table to query
+        pk         - event id
+        filters    - list of sql filter strings
+                     for example:
+                     ["watershed_group_code = 'LARL'",
+                      "fish_habitat is not null",
+                      "(wscode_ltree ~ %s OR wscode_ltree ~ %s"]
+        param      - parameters to supply to the query
+                     (replacing %s in the filters)
+        """
+        sql = """SELECT {pk},
+                    blue_line_key,
+                    downstream_route_measure,
+                    fwa_watershed_code,
+                    local_watershed_code
+                 FROM {table}""".format(pk=pk,
+                                        table=table)
+        if filters:
+            sql = sql + "\nWHERE " + "\n AND ".join(filters)
+        sql = sql + "\nORDER BY {pk}".format(pk=pk)
+        if param:
+            return self.db.query(sql, param)
+        else:
+            return self.db.query(sql)
+
     def create_events_from_matched_points(self, point_table, point_id,
                                           out_table, threshold):
         """
@@ -162,7 +194,9 @@ class FWA(object):
           which case only the event on matching stream is returned.
 
           Outputs a table with following fields:
+              event_id (unique identifier)
               pointId (input points' integer unique id)
+              linear_feature_id
               blue_line_key
               downstream_route_measure
               fwa_watershed_code
@@ -234,7 +268,10 @@ class FWA(object):
         if event_list:
             self.db[out_table].drop()
             sql = """CREATE TABLE {out_table}
-                       ({point_id} int,
+                       (
+                       event_id serial,
+                       {point_id} int,
+                       linear_feature_id int8,
                        blue_line_key int4,
                        downstream_route_measure float8,
                        fwa_watershed_code text,
@@ -242,9 +279,86 @@ class FWA(object):
                        waterbody_key int4,
                        watershed_group_code text,
                        distance_to_stream float8,
-                       match_number int4)""".format(out_table=out_table,
-                                                    point_id=point_id)
+                       match_number int4
+                       )""".format(out_table=out_table,
+                                   point_id=point_id)
             self.db.execute(sql)
             self.db[out_table].insert_many(event_list)
         else:
             return 'No input points within %sm of a stream.' % str(threshold)
+
+    def add_fishhab(self, table, pk, fish_habitat_table):
+        """
+        Add field `fish_habitat` to provided event table,
+        Then populate by examining the fish habitat line events
+        Overwrites existing fish_habitat field if it already exists
+
+        Maybe speed up by doing a join rather than iterating through recs:
+            SELECT
+              e.id,
+              h.blue_line_key,
+              max(h.downstream_route_measure) as downstream_route_measure
+            FROM temp.nfc_events e
+            INNER JOIN fish_passage.fish_habitat h
+            ON e.blue_line_key = h.blue_line_key
+            AND e.downstream_route_measure >= h.downstream_route_measure
+            GROUP BY e.id, h.blue_line_key
+            ORDER BY e.id
+        """
+        # add fish habitat field, dropping if it already exists
+        self.db[table].drop_column("fish_habitat")
+        self.db[table].create_column("fish_habitat", sqlalchemy.Text)
+
+        # select all events
+        events = self.get_events(table, pk)
+        start_time = datetime.datetime.utcnow()
+        for n, event in enumerate(events, start=1):
+            self.note_progress('add_fish_habitat: ', n,
+                               len(events), start_time)
+            # Get the fish_habitat value for the crossing from the line in the
+            # fish habitat event table on which the crossing lies,
+            lookup = {"InputTable": table,
+                      "PrimaryKey": pk,
+                      "FishHabitatTable": fish_habitat_table}
+            sql = self.db.build_query(self.queries["add_habitat"], lookup)
+            self.db.execute(sql, (event["blue_line_key"],
+                                  event["downstream_route_measure"],
+                                  event[pk]))
+
+    def create_geom_from_events(self,
+                                in_table,
+                                out_table,
+                                geom_type=None):
+        '''
+        Copy input event table, adding and populating a geometry field
+        corresponding to the event measures
+
+        in_table    - input event table
+        out_table   - output table to copy to
+        geom_type   - POINT|LINE
+
+        note that point output untested.
+        '''
+        # overwrite the table if it already exists
+        self.db[out_table].drop()
+        # if not specified, determine if events are point or line
+        # line events have length_metre
+        for req_column in ["blue_line_key", "downstream_route_measure"]:
+            if req_column not in self.db[in_table].columns:
+                raise ValueError("Column {c} does not exist".format(c=req_column))
+        if not geom_type:
+            if "length_metre" in self.db[in_table].columns:
+                geom_type = "LINE"
+            else:
+                geom_type = "POINT"
+        if geom_type == "POINT":
+            sql = self.queries["events_to_points"]
+        if geom_type == 'LINE':
+            sql = self.queries["events_to_lines"]
+        if geom_type not in ["POINT", "LINE"]:
+            raise ValueError('create_geom_from_events: geomType must be POINT or LINE')
+        # modify query string with input/output table names
+        query = self.db.build_query(sql, {"outputTable": out_table,
+                                          "inputTable": in_table})
+        self.db.execute(query)
+        return True
