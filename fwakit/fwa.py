@@ -10,10 +10,12 @@ import os
 import pkg_resources
 import json
 import re
+import datetime
 
 import pgdb
+from sqlalchemy.dialects.postgresql import INTEGER, BIGINT
 
-PROCESS_LOG_INTERVAL = 1000
+PROCESS_LOG_INTERVAL = 100
 
 
 class FWA(object):
@@ -62,29 +64,24 @@ class FWA(object):
         # load all queries in the sql folder
         self.queries = {}
         for f in pkg_resources.resource_listdir(__name__, "sql"):
-            self.queries[f] = pkg_resources.resource_string(__name__,
+            key = os.path.splitext(f)[0]
+            self.queries[key] = pkg_resources.resource_string(__name__,
                                                             os.path.join("sql",
                                                                          f))
 
-    def add_schema_qualifier(self, table):
-        if "." not in table:
-            return self.schema+"."+table
-        else:
-            return table
-
-    def replace_query_vars(self, sql, lookup):
-        """
-        Modify table and field name variables in a sql string with a dict.
-
-        USAGE
-        sql = 'SELECT $myInputField FROM $myInputTable'
-        lookup = {'myInputField':'customer_id', 'myInputTable':'customers'}
-        sql = fwa.replace_query_vars(sql, lookup)
-
-        """
-        for key, val in lookup.iteritems():
-            sql = sql.replace('$'+key, val)
-        return sql
+    def note_progress(self, function, idx, total, start_time):
+        '''
+        Note progress of a function
+        '''
+        if idx % self.log_interval == 0 and idx != 0:
+            end_time = datetime.datetime.utcnow()
+            elapsed = end_time - start_time
+            outStr = """%s - completed %s of %s records in %s ...""" % (function,
+                                                                       str(idx),
+                                                                       str(total),
+                                                                       str(elapsed))
+            print outStr
+            self.startTime = datetime.datetime.utcnow()
 
     def list_groups(self, table=None):
         """
@@ -105,64 +102,149 @@ class FWA(object):
         """
         Given a blue_line_key and measure, return local watershed code
         """
-        sql = """SELECT local_watershed_code
-                 FROM {table}
-                 WHERE blue_line_key = %s
-                 AND downstream_route_measure - .0001 <= %s
-                 ORDER BY downstream_route_measure desc
-                 LIMIT 1
-              """.format(table=self.tables["streams"])
-        localCode = self.db.query(sql, (blue_line_key, measure))
-        if localCode:
-            return localCode[0][0]
+        result = self.db.query_one(self.queries["get_local_code"],
+                                   (blue_line_key, measure))
+        if result:
+            return result[0]
         else:
             return None
 
-    def add_ltree(self, table):
+    def add_ltree(self, table, column_lookup={"fwa_watershed_code":
+                                              "wscode_ltree",
+                                              "local_watershed_code":
+                                              "localcode_ltree"}):
         """ Add watershed code ltree types and indexes to specified table
             To speed things up this makes a copy of table, any existing
             indexes/constraints will have to be regenerated
+
+            SQL is generated programatically (rather than living in /sql) so
+            we can handle tables where local_watershed_code does not exist.
         """
-        schema, table = self.db.parse_table_name(table)
-        sql = self.queries["add_ltree.sql"]
-        lookup = {"schema": schema,
-                  "sourceTable": table}
-        sql = self.replace_query_vars(sql, lookup)
+        schema, tablename = self.db.parse_table_name(table)
+        # create new table
+        temptable = schema+"."+"temp_ltree_copy"
+        self.db[temptable].drop()
+        ltree_list = []
+        for column in column_lookup:
+            if column in self.db[table].columns:
+                ltree_list.append(
+                    """CASE WHEN POSITION('-' IN wscode_trim({incolumn})) > 0
+                           THEN text2ltree(REPLACE(wscode_trim({incolumn}),'-','.'))
+                           ELSE  text2ltree(wscode_trim({incolumn}))
+                       END as {outcolumn}""".format(incolumn=column,
+                                                    outcolumn=column_lookup[column]))
+        ltree_sql = ", \n".join(ltree_list)
+        sql = """CREATE TABLE {temptable} AS
+                  SELECT
+                    *,
+                    {ltree_sql}
+                  FROM {table}""".format(temptable=temptable,
+                                         ltree_sql=ltree_sql,
+                                         table=table)
         self.db.execute(sql)
+        # drop original table
+        self.db[table].drop()
+        # rename new table back to original name
+        self.db[temptable].rename(tablename)
+        # create indexes
+        for column in column_lookup:
+            for index_type in ["btree", "gist"]:
+                self.db[table].create_index(column_lookup[column],
+                                            index_type=index_type)
 
-    def downstream_sql(self, wscode, localcode):
-        '''
-        Build a sql expression to return records with watershed code downstream
-        of given codes, BUT not with the same watershed code (not on the same
-        blue line route)
+    def create_events_from_matched_points(self, point_table, point_id,
+                                          out_table, threshold):
+        """
+          Locate points in provided input table on stream network.
 
-        This could be simplified to just use WSCode as input, but works as is.
+          Returns multiple matches - matches to all distinct streams within
+          specified tolerance unless there is a fwa_watershed_code match, in
+          which case only the event on matching stream is returned.
 
-        Note that the query must operate on tables that don't have 999-999999
-        records
-        '''
-        # translate the watershed codes into ltree paths
-        wscode = wscode[:wscode.find('-000000-')].replace('-', '.')
-        localcode = localcode[:localcode.find('-000000-')].replace('-', '.')
-        n_segments = wscode.count('.')
-        # Don't attempt to process streams running to ocean
-        if wscode.count('.') > 0:
-            for i in range(n_segments):
-                if i == 0:
-                    sql = """(wscode_ltree = '{wscode}'
-                             AND subltree(localcode_ltree||text2ltree('000000'),1,2) < '{localcode}')
-                          """.format(wscode=wscode[:3],
-                                     localcode=localcode[4:10])
-                else:
-                    position = (i * 7) - 3
-                    or_string = """
-                         OR ((wscode_ltree = '{wscode}'
-                         AND subltree(localcode_ltree||text2ltree('000000'),{p1},{p2}) < '{localcode}'))
-                         """.format(wscode=wscode[:position + 6],
-                                    p1=i+1,
-                                    p2=i+2,
-                                    localcode=localcode[position + 7:position + 13])
-                    sql = sql + or_string
-            return sql
-        else:    # return nothing if stream runs to ocean.
-            return None
+          Outputs a table with following fields:
+              pointId (input points' integer unique id)
+              blue_line_key
+              downstream_route_measure
+              fwa_watershed_code
+              local_watershed_code
+              watershed_group_code
+              waterbody_key
+              distance_to_stream (distance from point to matched stream)
+              match number (1, 2, 3 etc in order of distance)
+
+          pointTable - name of source point table
+          pointId    - INTEGER field holding unique id within pointTable
+          outTable   - name of destination event table within db
+                       note - overwritten if it already exists
+          threshold  - max distance of source points from stream (doesn't apply
+                       for lakes)
+
+          NOTES
+          - All inputs and outputs must be in the same database
+          - input table must include column fwa_watershed_code
+        """
+        # check that watershed code is present
+        if "fwa_watershed_code" not in self.db[point_table].columns:
+            raise ValueError('column fwa_watershed_code not in source table')
+        # check that point id is an integer field
+        if type(self.db[point_table].column_types[point_id]) not in (INTEGER,
+                                                                     BIGINT):
+            raise ValueError('source table pk must be integer/bigint')
+        # grab id and fwa_watershed_code of all points
+        pts = list(self.db[point_table].distinct(point_id,
+                                                 'fwa_watershed_code'))
+        # Find nearest neighbouring stream
+        event_list = []
+        start_time = datetime.datetime.utcnow()
+        for n, pt in enumerate(pts):
+            self.note_progress('create_events_from_matched_points: ', n,
+                               len(pts), start_time)
+            # get streams
+            sql = self.db.build_query(self.queries['streams_closest_to_point'],
+                                      {"inputPointTable": point_table,
+                                       "inputPointId": point_id})
+            # get ws_code of distinct streams within set distance
+            streams = self.db.query(sql, (pt["id"], pt["id"], threshold))
+            stream_codes = [r[0] for r in streams]
+            # if the point's watershed code is the same as one of the stream's,
+            # use only that stream
+            if pt["fwa_watershed_code"] in stream_codes:
+                streams = [s for s in streams
+                           if s["fwa_watershed_code"] ==
+                           pt["fwa_watershed_code"]]
+            # loop through nearby streams (or just the one if code matched)
+            counter = 1
+            for stream in streams:
+                stream_code = stream["fwa_watershed_code"]
+                distance_to_stream = stream["distance_to_stream"]
+                # snap the point to the matching stream
+                sql = self.db.build_query(self.queries['locate_point_on_stream'],
+                                          {"inputPointTable": point_table,
+                                           "inputPointId": point_id})
+                row = self.db.query_one(sql, (pt["id"],
+                                              stream_code, threshold))
+                # append row to list
+                if row["downstream_route_measure"]:
+                    insert_row = dict(row)
+                    insert_row["id"] = pt["id"]
+                    insert_row["match_number"] = counter
+                    insert_row["distance_to_stream"] = distance_to_stream
+                    event_list.append(insert_row)
+                    counter += 1
+        if event_list:
+            self.db[out_table].drop()
+            sql = """CREATE TABLE {out_table}
+                       ({point_id} int,
+                       blue_line_key int4,
+                       downstream_route_measure float8,
+                       fwa_watershed_code text,
+                       local_watershed_code text,
+                       waterbody_key int4,
+                       watershed_group_code text,
+                       distance_to_stream float8,
+                       match_number int4)""".format(out_table=out_table,
+                                                    point_id=point_id)
+            self.db.execute(sql)
+            self.db[out_table].insert_many(event_list)
+        else:
+            return 'No input points within %sm of a stream.' % str(threshold)

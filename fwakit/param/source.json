@@ -44,7 +44,9 @@
     "fields": [
       "waterbody_type_20k",
       "watershed_group_id_20k",
-      "waterbody_poly_id_20k"
+      "waterbody_poly_id_20k",
+      "fwa_watershed_code_20k",
+      "watershed_code_50k"
     ],
     "table": "fwa_waterbodies_20k_50k"
   }, {
