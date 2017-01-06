@@ -184,18 +184,13 @@ class FWA(object):
         else:
             return self.db.query(sql)
 
-    def create_events_from_matched_points(self, point_table, point_id,
-                                          out_table, threshold):
+    def create_events_from_points(self, point_table, point_id, out_table,
+                                  threshold, match_col=None):
         """
           Locate points in provided input table on stream network.
 
-          Returns multiple matches - matches to all distinct streams within
-          specified tolerance unless there is a fwa_watershed_code match, in
-          which case only the event on matching stream is returned.
-
           Outputs a table with following fields:
-              event_id (unique identifier)
-              pointId (input points' integer unique id)
+              point_id (input points' integer unique id)
               linear_feature_id
               blue_line_key
               downstream_route_measure
@@ -215,61 +210,67 @@ class FWA(object):
 
           NOTES
           - All inputs and outputs must be in the same database
-          - input table must include column fwa_watershed_code
         """
-        # check that watershed code is present
-        if "fwa_watershed_code" not in self.db[point_table].columns:
-            raise ValueError('column fwa_watershed_code not in source table')
-        # check that point id is an integer field
+        # check that match_col is present if specified
+        if match_col and match_col not in self.db[point_table].columns:
+            raise ValueError('match column not in source table')
+        # check that id is an integer field
         if type(self.db[point_table].column_types[point_id]) not in (INTEGER,
                                                                      BIGINT):
             raise ValueError('source table pk must be integer/bigint')
         # grab id and fwa_watershed_code of all points
-        pts = list(self.db[point_table].distinct(point_id,
-                                                 'fwa_watershed_code'))
+        if match_col:
+            pts = list(self.db[point_table].distinct(point_id,
+                                                     match_col))
+        else:
+            pts = list(self.db[point_table].distinct(point_id))
         # Find nearest neighbouring stream
         event_list = []
         start_time = datetime.datetime.utcnow()
         for n, pt in enumerate(pts):
-            self.note_progress('create_events_from_matched_points: ', n,
+            if match_col:
+                pt = pt[point_id]
+            self.note_progress('create_events_from_points: ', n,
                                len(pts), start_time)
+            matched = False
             # get streams
             sql = self.db.build_query(self.queries['streams_closest_to_point'],
                                       {"inputPointTable": point_table,
                                        "inputPointId": point_id})
-            # get ws_code of distinct streams within set distance
-            streams = self.db.query(sql, (pt["id"], pt["id"], threshold))
-            stream_codes = [r[0] for r in streams]
-            # if the point's watershed code is the same as one of the stream's,
+            # get ws_code and distance to stream of nearby distinct streams
+            streams = self.db.query(sql, (pt, threshold))
+            if streams:
+            # if the point's match field is the same as one of the stream's,
             # use only that stream
-            if pt["fwa_watershed_code"] in stream_codes:
-                streams = [s for s in streams
-                           if s["fwa_watershed_code"] ==
-                           pt["fwa_watershed_code"]]
-            # loop through nearby streams (or just the one if code matched)
-            counter = 1
-            for stream in streams:
-                stream_code = stream["fwa_watershed_code"]
-                distance_to_stream = stream["distance_to_stream"]
-                # snap the point to the matching stream
-                sql = self.db.build_query(self.queries['locate_point_on_stream'],
-                                          {"inputPointTable": point_table,
-                                           "inputPointId": point_id})
-                row = self.db.query_one(sql, (pt["id"],
-                                              stream_code, threshold))
-                # append row to list
-                if row["downstream_route_measure"]:
-                    insert_row = dict(row)
-                    insert_row["id"] = pt["id"]
-                    insert_row["match_number"] = counter
-                    insert_row["distance_to_stream"] = distance_to_stream
-                    event_list.append(insert_row)
-                    counter += 1
+                if match_col:
+                    if pt[match_col] in [r[match_col] for r in streams]:
+                        # move matching stream to front of the list
+                        streams = [s for s in streams
+                                   if s[match_col] == pt[match_col]]
+                        matched = True
+                #n_other_nearby_streams = len(streams) - 1
+                #stream = streams[0]
+                for n_stream, stream in enumerate(streams):
+                    stream_code = stream["fwa_watershed_code"]
+                    distance_to_stream = stream["distance_to_stream"]
+                    # snap the point to the matching stream
+                    sql = self.db.build_query(self.queries['locate_point_on_stream'],
+                                              {"inputPointTable": point_table,
+                                               "inputPointId": point_id})
+                    row = self.db.query_one(sql, (pt, stream_code, threshold))
+                    # append row to list
+                    if row["downstream_route_measure"]:
+                        insert_row = dict(row)
+                        insert_row[point_id] = pt
+                        insert_row["matched"] = matched
+                        insert_row["distance_to_stream"] = distance_to_stream
+                        #insert_row["n_other_nearby_streams"] = n_other_nearby_streams
+                        insert_row["n_stream_match"] = n_stream + 1
+                        event_list.append(insert_row)
         if event_list:
             self.db[out_table].drop()
             sql = """CREATE TABLE {out_table}
                        (
-                       event_id serial,
                        {point_id} int,
                        linear_feature_id int8,
                        blue_line_key int4,
@@ -279,9 +280,11 @@ class FWA(object):
                        waterbody_key int4,
                        watershed_group_code text,
                        distance_to_stream float8,
-                       match_number int4
+                       matched boolean,
+                       n_stream_match int
                        )""".format(out_table=out_table,
                                    point_id=point_id)
+                      # --n_other_nearby_streams int
             self.db.execute(sql)
             self.db[out_table].insert_many(event_list)
         else:
@@ -362,3 +365,59 @@ class FWA(object):
                                           "inputTable": in_table})
         self.db.execute(query)
         return True
+
+    def index_events_downstream(self, table, pk):
+        '''
+        Given a table with blueLineKey events, create a field which holds
+        id of next event downstream from a given event.
+
+         - overwrites downstream_event_id if column already exists
+         - events cannot be on 999-999999 streams
+         - required fields:
+             blue_line_key,
+             downstream_route_measure,
+             fwa_watershed_code,
+             local_watershed_code
+
+        table - input event table
+        pk    - name of unique identifier within event table, must be of
+                     type integer
+        '''
+        # add index field
+        dnstr_id = "downstream_event_id"
+        self.db[table].drop_column(dnstr_id)
+        self.db[table].create_column(table, INTEGER)
+        events = self.get_events(table, pk)
+        start_time = datetime.datetime.utcnow()
+        for n, event in enumerate(events, start=1):
+            self.note_progress('index_event_table_downstream', n, events.rowcount, start_time)
+            #downstreamSql = self.sql_downstream_below_blueLineKey(wsCode, localCode)
+            downstreamSql = self.sql_downstream_below_blueLineKey_non_recursive(event["fwa_watershed_code"],
+                                                                                event["local_watershed_code"])
+            # create subquery to inject into update statement
+            if downstreamSql:
+                downstreamSql = """UNION ALL
+                            SELECT %s, fwa_watershed_code, local_watershed_code, downstream_route_measure
+                            FROM %s WHERE %s
+                         ORDER BY fwa_watershed_code DESC, downstream_route_measure DESC
+                         """ % (event[pk],
+                                table,
+                                downstreamSql)
+            else:
+                downstreamSql = ""
+            # create update statement
+            updateSql = """UPDATE %s
+                            SET downstream_event_id =
+                                (SELECT %s
+                                 FROM
+                                 (SELECT %s, fwa_watershed_code, local_watershed_code, downstream_route_measure
+                                    FROM %s
+                                   WHERE blue_line_key = %s
+                                     AND downstream_route_measure <  (%s - .00001)
+                                  %s) as foo
+                                 LIMIT 1)
+                                 WHERE %s = '%s'""" % (eventTable, eventId,
+                                                     eventId, eventTable,
+                                                     str(blueLineKey), str(measure),
+                                                     downstreamSql, eventId, str(idValue))
+            self.db.execute(updateSql)
