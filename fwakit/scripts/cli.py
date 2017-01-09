@@ -1,7 +1,9 @@
 # Command line interface for loading freshwater atlas data
 import os
 import urlparse
-import subprocess
+import tempfile
+import urllib2
+import zipfile
 
 import click
 
@@ -17,7 +19,8 @@ def cli():
 
 @click.command()
 def createdb():
-    """Create local FWA database"""
+    """Create local FWA database
+    """
     # load data definitions
     fwa = fwakit.FWA(connect=False)
     dburl = fwa.dburl
@@ -32,40 +35,55 @@ def createdb():
 
 @click.command()
 def get_data():
-    """Download FWA data
-
-    Does not include linear boundaries, watershed boundaries and watershed
-    polys, add these if required
-
-    Tested only on OSX. Not going to work on windows, download manually.
+    """Download FWA_BC.gdb from GeoBC
     """
     fwa = fwakit.FWA()
     click.echo('Downloading freshwater atlas source data')
-    # get data source
-    cmd = """wget --trust-server-names -qNP /tmp {f}
-          """.format(f=fwa.source["url"])
-    subprocess.call(cmd, shell=True)
+
+    # download from ftp
+    fp = tempfile.NamedTemporaryFile('wb',
+                                     dir=tempfile.gettempdir(),
+                                     suffix=".zip",
+                                     delete=False)
+    download = urllib2.urlopen(fwa.source["url"])
+    file_size_dl = 0
+    block_sz = 8192
+    while True:
+        buffer = download.read(block_sz)
+        if not buffer:
+            break
+        file_size_dl += len(buffer)
+        fp.write(buffer)
+    fp.close()
+
     # unzip the gdb
-    cmd = """unzip -qun -d /tmp /tmp/{f}""".format(f=fwa.source["file"])
-    subprocess.call(cmd, shell=True)
+    zipped_file = zipfile.ZipFile(fp.name, 'r')
+    zipped_file.extractall()
+    zipped_file.close()
 
 
 @click.command()
-def load_data():
-    """load source data to postgres"""
+@click.option('--layers', '-l', help="Comma separated list of tables to load")
+def load_data(layers):
+    """Load FWA_BC.gdb to PostgreSQL
+    """
     fwa = fwakit.FWA()
     # create required extenstions/functions/schema if they don't exist
     fwa.db.execute("CREATE EXTENSION IF NOT EXISTS POSTGIS")
     fwa.db.execute("CREATE EXTENSION IF NOT EXISTS LTREE")
     fwa.db.execute("CREATE SCHEMA IF NOT EXISTS {s}".format(s=fwa.schema))
-    fwa.db.execute(fwa.queries["functions.sql"])
+    fwa.db.execute(fwa.queries["functions"])
     # load source data
-    source_file = os.path.join("/tmp", fwa.source["file"])
     click.echo('Loading FWA source data to PostgreSQL database')
-    for layer in fwa.source["layers"]:
+    if not layers:
+        in_layers = fwa.config["layers"]
+    else:
+        layers = layers.split(",")
+        in_layers = [l for l in fwa.config["layers"] if l["table"] in layers]
+    for layer in in_layers:
         click.echo('Loading '+layer['alias']+' to '+layer['table'])
         # load layer
-        util.gdb2pg(source_file,
+        util.gdb2pg(fwa.config["source_file"],
                     layer['table'].upper(),
                     fwa.dburl,
                     fwa.schema)
@@ -91,6 +109,7 @@ def load_data():
             fwa.add_ltree(table)
         # add primary key constraint
         fwa.db[table].add_primary_key(layer["id"])
+        click.echo("Adding indexes to %s" % layer["table"])
         # create indexes on columns noted in parameters
         for column in layer["fields"]:
             tablename = layer['table']

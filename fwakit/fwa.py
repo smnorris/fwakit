@@ -8,9 +8,10 @@ Tools for working with BC Freshwater Atlas
 
 import os
 import pkg_resources
-import json
 import re
 import datetime
+import json
+import tempfile
 
 import sqlalchemy
 from sqlalchemy.dialects.postgresql import INTEGER, BIGINT
@@ -26,13 +27,18 @@ class FWA(object):
     Hold connection to FWA database
     """
     def __init__(self, db=None, connect=True):
-        # load the db parameters
-        db_param = json.loads(pkg_resources.resource_string(__name__,
-                              "param/database.json"))
+        # load config
+        with open(os.path.join(os.path.dirname(__file__),
+                               'config.json')) as configfile:
+            self.config = json.load(configfile)
+        self.config["source_file"] = os.path.join(tempfile.gettempdir(),
+                                                  os.path.splitext(
+                                                    os.path.split(
+                                                      self.config["source"])[1])[0])
         # if no connection is provided, create one
         if not db:
-            self.dburl = db_param["dburl"]
-            self.schema = db_param["schema"]
+            self.dburl = self.config["dburl"]
+            self.schema = self.config["schema"]
             if connect:
                 self.db = pgdb.connect(self.dburl)
         # if a connection is provided, use it
@@ -42,15 +48,12 @@ class FWA(object):
             # if schema is specified in provided connection, use it
             if db.schema:
                 self.schema = db.schema
-            # if no schema is specified, default to the schema in db params
+            # if no schema is specified, use schema in config
             else:
-                self.schema = db_param["schema"]
-        # load data source parameters
-        self.source = json.loads(pkg_resources.resource_string(__name__,
-                                 "param/source.json"))
+                self.schema = self.config["schema"]
         # define shortcuts to tables
         self.tables = {}
-        for layer in self.source["layers"]:
+        for layer in self.config["layers"]:
             self.tables[layer["alias"]] = self.schema+"."+layer["table"]
 
         self.log_interval = PROCESS_LOG_INTERVAL
@@ -116,12 +119,13 @@ class FWA(object):
                                               "wscode_ltree",
                                               "local_watershed_code":
                                               "localcode_ltree"}):
-        """ Add watershed code ltree types and indexes to specified table
-            To speed things up this makes a copy of table, any existing
-            indexes/constraints will have to be regenerated
+        """
+        Add watershed code ltree types and indexes to specified table
+        To speed things up this makes a copy of table, any existing
+        indexes/constraints will have to be regenerated
 
-            SQL is generated programatically (rather than living in /sql) so
-            we can handle tables where local_watershed_code does not exist.
+        SQL is generated programatically (rather than living in /sql) so
+        we can handle tables where local_watershed_code does not exist.
         """
         schema, tablename = self.db.parse_table_name(table)
         # create new table
@@ -152,7 +156,7 @@ class FWA(object):
         # create indexes
         for column in column_lookup:
             for index_type in ["btree", "gist"]:
-                self.db[table].create_index(column_lookup[column],
+                self.db[table].create_index([column_lookup[column]],
                                             index_type=index_type)
 
     def get_events(self, table, pk, filters=None, param=None):
