@@ -90,8 +90,7 @@ class FWA(object):
             self.startTime = datetime.datetime.utcnow()
 
     def list_groups(self, table=None):
-        """
-        Return sorted list of watershed groups in specified table
+        """Return sorted list of watershed groups in specified table
         """
         if not table:
             table = self.tables["groups"]
@@ -99,14 +98,13 @@ class FWA(object):
         return sorted(groups)
 
     def trim_ws_code(self, code):
-        '''
-        Trim the trailing zeros from input watershed code/local code
-        '''
+        """Trim the trailing zeros from input watershed code/local code
+        """
+
         return re.sub(r"(\-000000)+$", "", code)
 
     def get_local_code(self, blue_line_key, measure):
-        """
-        Given a blue_line_key and measure, return local watershed code
+        """Given a blue_line_key and measure, return local watershed code
         """
         result = self.db.query_one(self.queries["get_local_code"],
                                    (blue_line_key, measure))
