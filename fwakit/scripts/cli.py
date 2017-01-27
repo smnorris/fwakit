@@ -1,4 +1,5 @@
 # Command line interface for loading freshwater atlas data
+from __future__ import absolute_import
 import urlparse
 import tempfile
 import urllib2

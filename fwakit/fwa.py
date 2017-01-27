@@ -6,6 +6,8 @@ Tools for working with BC Freshwater Atlas
   - methods for describing and interacting with event tables
 """
 
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import pkg_resources
 import re
@@ -86,7 +88,7 @@ class FWA(object):
                                                                        str(idx),
                                                                        str(total),
                                                                        str(elapsed))
-            print outStr
+            print(outStr)
             self.startTime = datetime.datetime.utcnow()
 
     def list_groups(self, table=None):

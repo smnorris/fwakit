@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from click.testing import CliRunner
 
 from fwakit.scripts.cli import cli
