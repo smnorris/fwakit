@@ -1,5 +1,11 @@
-{
-  "source": "ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public/FWA_BC.gdb.zip",
+{ "source_url": "ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public",
+  "source_files": ["FWA_BC.gdb.zip",
+                   "FWA_STREAM_NETWORKS_SP.gdb.zip",
+                   "FWA_LINEAR_BOUNDARIES_SP.gdb.zip",
+                   "FWA_WATERSHEDS_POLY.gdb.zip",
+                   "FWA_WATERSHED_BOUNDARIES_SP.gdb.zip"
+                   ],
+  "dl_path": "/Volumes/Data/Projects/env/fish_passage/model/fwakit/source_data",
   "dburl": "postgresql://postgres:postgres@localhost:5432/postgis",
   "schema": "whse_basemapping",
   "layers": [
@@ -7,7 +13,8 @@
       "alias": "edge_type_codes",
       "id": "edge_type",
       "fields": [],
-      "table": "fwa_edge_type_codes"
+      "table": "fwa_edge_type_codes",
+      "source": "FWA_BC.gdb"
     },
 
     {
@@ -21,7 +28,8 @@
         "watershed_group_code",
         "gnis_name"
       ],
-      "table": "fwa_obstructions_sp"
+      "table": "fwa_obstructions_sp",
+      "source": "FWA_BC.gdb"
     },
 
     {
@@ -36,6 +44,8 @@
         "gnis_name"
       ],
       "table": "fwa_stream_networks_sp"
+      ,
+      "source": "FWA_STREAM_NETWORKS_SP.gdb"
     },
 
     {
@@ -43,9 +53,11 @@
       "id": "stream_20k_50k_id",
       "fields": [
         "watershed_group_id_20k",
-        "linear_feature_id_20k"
+        "linear_feature_id_20k",
+        "watershed_code_50k"
       ],
-      "table": "fwa_streams_20k_50k"
+      "table": "fwa_streams_20k_50k",
+      "source": "FWA_BC.gdb"
     },
 
     {
@@ -58,21 +70,24 @@
         "fwa_watershed_code_20k",
         "watershed_code_50k"
       ],
-      "table": "fwa_waterbodies_20k_50k"
+      "table": "fwa_waterbodies_20k_50k",
+      "source": "FWA_BC.gdb"
     },
 
     {
       "alias": "waterbody_type_codes",
       "id": "waterbody_type",
       "fields": [],
-      "table": "fwa_waterbody_type_codes"
+      "table": "fwa_waterbody_type_codes",
+      "source": "FWA_BC.gdb"
     },
 
     {
       "alias": "groups",
       "id": "watershed_group_id",
       "fields": ["watershed_group_code"],
-      "table": "fwa_watershed_groups_poly"
+      "table": "fwa_watershed_groups_poly",
+      "source": "FWA_BC.gdb"
     },
 
     {
@@ -85,7 +100,8 @@
         "watershed_group_code",
         "gnis_name_1"
       ],
-      "table": "fwa_lakes_poly"
+      "table": "fwa_lakes_poly",
+      "source": "FWA_BC.gdb"
     },
 
     {
@@ -98,7 +114,8 @@
         "watershed_group_code",
         "gnis_name_1"
       ],
-      "table": "fwa_wetlands_poly"
+      "table": "fwa_wetlands_poly",
+      "source": "FWA_BC.gdb"
     },
 
     {
@@ -111,7 +128,8 @@
         "watershed_group_code",
         "gnis_name_1"
       ],
-      "table": "fwa_manmade_waterbodies_poly"
+      "table": "fwa_manmade_waterbodies_poly",
+      "source": "FWA_BC.gdb"
     },
 
     {
@@ -124,7 +142,8 @@
         "watershed_group_code",
         "gnis_name_1"
       ],
-      "table": "fwa_rivers_poly"
+      "table": "fwa_rivers_poly",
+      "source": "FWA_BC.gdb"
     },
 
     {
@@ -137,7 +156,8 @@
         "watershed_group_code",
         "gnis_name_1"
       ],
-      "table": "fwa_glaciers_poly"
+      "table": "fwa_glaciers_poly",
+      "source": "FWA_BC.gdb"
     }
   ]
 }

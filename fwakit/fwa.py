@@ -13,7 +13,6 @@ import pkg_resources
 import re
 import datetime
 import json
-import tempfile
 
 import sqlalchemy
 from sqlalchemy.dialects.postgresql import INTEGER, BIGINT
@@ -33,10 +32,6 @@ class FWA(object):
         with open(os.path.join(os.path.dirname(__file__),
                                'config.json')) as configfile:
             self.config = json.load(configfile)
-        self.config["source_file"] = os.path.join(tempfile.gettempdir(),
-                                                  os.path.splitext(
-                                                    os.path.split(
-                                                      self.config["source"])[1])[0])
         # if no connection is provided, create one
         if not db:
             self.dburl = self.config["dburl"]
@@ -153,11 +148,31 @@ class FWA(object):
         self.db[table].drop()
         # rename new table back to original name
         self.db[temptable].rename(tablename)
-        # create indexes
+        # create ltree indexes
         for column in column_lookup:
-            for index_type in ["btree", "gist"]:
-                self.db[table].create_index([column_lookup[column]],
-                                            index_type=index_type)
+            if column in self.db[table].columns:
+                for index_type in ["btree", "gist"]:
+                    self.db[table].create_index([column_lookup[column]],
+                                                index_type=index_type)
+
+    def create_lut_50k_20k_wsc(self, table='fwa_streams_20k_50k_wsc'):
+        """
+        Create a simplified lookup relating 50k codes to 20k codes, the source
+        lookup table relates linear_feature_id to 50k codes
+        """
+        self.db[self.schema+"."+table].drop()
+        sql = """CREATE TABLE {schema}.{table} AS
+                 SELECT DISTINCT
+                   watershed_code_50k,
+                   fwa_watershed_code_20k,
+                   watershed_group_code_20k
+                 FROM {schema}.fwa_streams_20k_50k
+                 ORDER BY watershed_code_50k, fwa_watershed_code_20k
+              """.format(schema=self.schema,
+                         table=table)
+        self.db.execute(sql)
+        self.db[self.schema+"."+table].create_index(['watershed_code_50k'])
+        self.db[self.schema+"."+table].create_index(['fwa_watershed_code_20k'])
 
     def get_events(self, table, pk, filters=None, param=None):
         """

@@ -41,7 +41,9 @@ setup(name='fwakit',
       zip_safe=False,
       install_requires=[
           'sqlalchemy',
-          'click'
+          'click',
+          'pyyaml',
+          'pgdb'
         ],
       extras_require={
           'test': ['pytest', 'pandas'],
