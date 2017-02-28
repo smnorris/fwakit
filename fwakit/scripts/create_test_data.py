@@ -13,7 +13,11 @@ for source_file in fwa.config['source_files']:
             out_file = os.path.splitext(source_file)[0]
             sql = "SELECT geometrytype(geom) FROM {t} LIMIT 1".format(t=fwa.tables[table])
             geom_type = fwa.db.query(sql).fetchone()[0]
-            sql = "SELECT * FROM {t} WHERE watershed_group_code = 'VICT'".format(t=fwa.tables[table])
+            columns = fwa.db[fwa.tables[table]].columns
+            columns = [c for c in columns if 'ltree' not in c]
+            sql = """SELECT {c} FROM {t}
+                     WHERE watershed_group_code = 'VICT'
+                  """.format(c=', '.join(columns), t=fwa.tables[table])
             if 'grouped' not in fwa.config['source_files'][source_file][table].keys():
                 outlayer = table
             else:

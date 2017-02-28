@@ -48,7 +48,7 @@ setup(name='fwakit',
           'pgdb'
         ],
       extras_require={
-          'test': ['pytest', 'pandas'],
+          'test': ['pytest'],
       },
       entry_points="""
       [console_scripts]

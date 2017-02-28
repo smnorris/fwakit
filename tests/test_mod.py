@@ -1,13 +1,9 @@
 from __future__ import absolute_import
-import pandas as pd
+
 
 import fwakit
 
 FWA = fwakit.FWA()
-
-# load test data to postgres
-df = pd.read_csv(r'tests/data/test.csv')
-df.to_sql('test_points', FWA.db.engine, if_exists='replace', schema=FWA.schema)
 
 
 def test_initialize():
@@ -28,13 +24,6 @@ def test_list_groups():
 def test_get_local_code():
     assert FWA.trim_ws_code(FWA.get_local_code(354155107, 3400)) == \
       '920-076175-303123'
-
-
-def test_add_ltree():
-    FWA.add_ltree(table=FWA.schema+'.test_points')
-    assert 'wscode_ltree' in FWA.db[FWA.schema+'.test_points'].columns
-
-
 
 
 # this works
