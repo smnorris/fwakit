@@ -12,7 +12,7 @@ import os
 import pkg_resources
 import re
 import datetime
-import json
+import yaml
 
 import sqlalchemy
 from sqlalchemy.dialects.postgresql import INTEGER, BIGINT
@@ -27,15 +27,17 @@ class FWA(object):
     """
     Hold connection to FWA database
     """
-    def __init__(self, db=None, connect=True):
+    def __init__(self, config=None, db=None, connect=True):
         # load config
-        with open(os.path.join(os.path.dirname(__file__),
-                               'config.json')) as configfile:
-            self.config = json.load(configfile)
+        if not config:
+            config = os.path.join(os.path.dirname(__file__), 'config.yml')
+        with open(config) as config_file:
+            self.config = yaml.load(config_file)
+
         # if no connection is provided, create one
         if not db:
-            self.dburl = self.config["dburl"]
-            self.schema = self.config["schema"]
+            self.dburl = self.config["db_url"]
+            self.schema = self.config["db_schema"]
             if connect:
                 self.db = pgdb.connect(self.dburl)
         # if a connection is provided, use it
@@ -50,8 +52,13 @@ class FWA(object):
                 self.schema = self.config["schema"]
         # define shortcuts to tables
         self.tables = {}
-        for layer in self.config["layers"]:
-            self.tables[layer["alias"]] = self.schema+"."+layer["table"]
+        for source_file in self.config["source_files"]:
+            for table in self.config["source_files"][source_file]:
+                t = self.config["source_files"][source_file][table]
+                #self.tables[t["alias"]] = self.schema + "." + table
+                self.tables[table] = self.schema + "." + table
+                # add the configured table def to config attributes
+                self.config[table] = t
 
         self.log_interval = PROCESS_LOG_INTERVAL
         # note bad stream data
@@ -90,7 +97,7 @@ class FWA(object):
         """Return sorted list of watershed groups in specified table
         """
         if not table:
-            table = self.tables["groups"]
+            table = self.tables["fwa_watershed_groups_poly"]
         groups = self.db[table].distinct("watershed_group_code")
         return sorted(groups)
 

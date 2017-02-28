@@ -41,7 +41,9 @@ setup(name='fwakit',
       zip_safe=False,
       install_requires=[
           'sqlalchemy',
+          'requests',
           'click',
+          'fiona',
           'pyyaml',
           'pgdb'
         ],

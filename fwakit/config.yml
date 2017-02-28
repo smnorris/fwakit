@@ -1,0 +1,131 @@
+# define local paths
+dl_path: source_data
+#db_url: postgresql://postgres:postgres@localhost:5432/postgis
+# TEST DB
+db_url: postgresql://postgres:postgres@localhost:5432/fwa_test
+db_schema: whse_basemapping
+
+# define source data (url, files: tables: alias, id, indexed fields)
+#source_url: ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public/
+# TEST MINI DOWNLOAD
+source_url: http://www.hillcrestgeo.ca/fwakit/
+source_files:
+  FWA_BC.gdb.zip:
+    fwa_edge_type_codes:
+        alias: edge_type_codes
+        id: edge_type
+        index_fields: {}
+    fwa_obstructions_sp:
+        alias: obstructions
+        id: obstruction_id
+        index_fields:
+          - linear_feature_id
+          - blue_line_key
+          - watershed_key
+          - obstruction_type
+          - watershed_group_code
+          - gnis_name
+    fwa_streams_20k_50k:
+        alias: streams_20k_50k
+        id: stream_20k_50k_id
+        index_fields:
+          - watershed_group_id_20k
+          - linear_feature_id_20k
+          - watershed_code_50k
+    fwa_waterbodies_20k_50k:
+        alias: waterbodies_20k_50k
+        id: waterbody_20k_50k_id
+        index_fields:
+          - waterbody_type_20k
+          - watershed_group_id_20k
+          - waterbody_poly_id_20k
+          - fwa_watershed_code_20k
+          - watershed_code_50k
+    fwa_waterbody_type_codes:
+        alias: waterbody_type_codes
+        id: waterbody_type
+        index_fields: {}
+    fwa_watershed_groups_poly:
+        alias: groups
+        id: watershed_group_id
+        index_fields:
+          - watershed_group_code
+    fwa_lakes_poly:
+        alias: lakes
+        id: waterbody_poly_id
+        index_fields:
+          - blue_line_key
+          - watershed_key
+          - waterbody_key
+          - watershed_group_code
+          - gnis_name_1
+    fwa_wetlands_poly:
+        alias: wetlands
+        id: waterbody_poly_id
+        index_fields:
+          - blue_line_key
+          - watershed_key
+          - waterbody_key
+          - watershed_group_code
+          - gnis_name_1
+    fwa_manmade_waterbodies_poly:
+        alias: manmade_waterbodies
+        id: waterbody_poly_id
+        index_fields:
+          blue_line_key
+          watershed_key
+          waterbody_key
+          watershed_group_code
+          gnis_name_1
+    fwa_rivers_poly:
+        alias: rivers
+        id: waterbody_poly_id
+        index_fields:
+          - blue_line_key
+          - watershed_key
+          - waterbody_key
+          - watershed_group_code
+          - gnis_name_1
+    fwa_glaciers_poly:
+        alias: glaciers
+        id: waterbody_poly_id
+        index_fields:
+          - blue_line_key
+          - watershed_key
+          - waterbody_key
+          - watershed_group_code
+          - gnis_name_1
+  FWA_STREAM_NETWORKS_SP.gdb.zip:
+    fwa_stream_networks_sp:
+          grouped: True
+          alias: streams
+          id: linear_feature_id
+          index_fields:
+            edge_type
+            blue_line_key
+            watershed_key
+            waterbody_key
+            watershed_group_code
+            gnis_name
+  FWA_LINEAR_BOUNDARIES_SP.gdb.zip:
+    fwa_linear_boundaries_sp:
+          grouped: True
+          alias: linear_boundaries
+          id: linear_feature_id
+          index_fields:
+            - edge_type
+            - blue_line_key
+            - watershed_key
+            - waterbody_key
+            - watershed_group_code
+  FWA_WATERSHEDS_POLY.gdb.zip:
+    fwa_watersheds_poly_sp:
+          grouped: True
+          alias: watersheds
+          id: watershed_feature_id
+          index_fields:
+            - gnis_name_1
+            - waterbody_id
+            - waterbody_key
+            - watershed_key
+            - watershed_group_code

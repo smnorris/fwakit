@@ -1,27 +1,30 @@
 # Command line interface for loading freshwater atlas data
 from __future__ import absolute_import
-import urlparse
-import tempfile
-import urllib2
-import zipfile
+try:
+    from urllib.parse import urljoin
+except ImportError:
+     from urlparse import urljoin
+
 import os
 
 import click
+import fiona
 
-import pgdb
 import fwakit
+from fwakit import util
 
 
-def make_sure_path_exists(path):
-    """
-    Make directories in path if they do not exist.
-    Modified from http://stackoverflow.com/a/5032238/1377021
-    """
-    try:
-        os.makedirs(path)
-        return path
-    except:
-        pass
+def parse_layers(fwa, layers, skiplayers):
+    if not layers:
+        in_layers = fwa.tables
+    else:
+        layers = layers.split(",")
+        in_layers = [l for l in fwa.tables if l in layers]
+    if skiplayers:
+        skiplayers = skiplayers.split(",")
+        skip_layers = [l for l in fwa.tables if l in skiplayers]
+        in_layers = list(set(in_layers).difference(set(skip_layers)))
+    return in_layers
 
 
 @click.group()
@@ -30,141 +33,125 @@ def cli():
 
 
 @click.command()
-def createdb():
-    """Create local FWA database
-    """
-    # load data definitions
-    fwa = fwakit.FWA(connect=False)
-    dburl = fwa.dburl
-    u = urlparse.urlparse(dburl)
-    dbname = u.path[1:]
-    user = u.username
-    userdb = urlparse.urlunparse((u.scheme, u.netloc, user, None, None, None))
-    db = pgdb.connect(userdb)
-    db.execute("CREATE DATABASE {db}".format(db=dbname))
-
-
-@click.command()
-def download():
+@click.option('-f', '--files', help='List of files to download')
+def download(files):
     """Download FWA gdb archives from GeoBC ftp
     """
     fwa = fwakit.FWA()
-
     # download files from ftp
-    for source_file in fwa.config['sources']:
+    source_url = fwa.config['source_url']
+    if files:
+        files = files.split(",")
+    else:
+        files = fwa.config['source_files']
+    for source_file in files:
+        url = urljoin(source_url, source_file)
         click.echo('Downloading '+source_file)
-        fp = tempfile.NamedTemporaryFile('wb',
-                                         dir=tempfile.gettempdir(),
-                                         suffix=".zip",
-                                         delete=False)
-        download = urllib2.urlopen(source_file)
-        file_size_dl = 0
-        block_sz = 8192
-        while True:
-            buffer = download.read(block_sz)
-            if not buffer:
-                break
-            file_size_dl += len(buffer)
-            fp.write(buffer)
-        fp.close()
-
-        # unzip the gdb, delete zip archive
-        click.echo('Extracting '+source_file+' to '+fwa.config['dl_path '])
-        unzip_dir = make_sure_path_exists(fwa.config["dl_path"])
-        zipped_file = zipfile.ZipFile(fp.name, 'r')
-        zipped_file.extractall(unzip_dir)
-        zipped_file.close()
-
-        # delete the temporary zipfile
-        os.unlink(fp.name)
+        util.download_and_unzip(url, fwa.config['dl_path'])
 
 
 @click.command()
-@click.option('--layers', '-l', help="Comma separated list of tables to load")
-@click.option('--skiplayers', '-sl', help="Comma separated list of tables to skip")
+@click.option('--layers', '-l', help='Comma separated list of tables to load')
+@click.option('--skiplayers', '-sl',
+              help='Comma separated list of tables to skip')
 def load(layers, skiplayers):
-    """Load FWA_BC.gdb to PostgreSQL
+    """Load FWA data to PostgreSQL
     """
     fwa = fwakit.FWA()
+    # parse the input layers
+    in_layers = parse_layers(fwa, layers, skiplayers)
     # create required extenstions/functions/schema if they don't exist
-    fwa.db.execute("CREATE EXTENSION IF NOT EXISTS POSTGIS")
-    fwa.db.execute("CREATE EXTENSION IF NOT EXISTS LTREE")
-    fwa.db.execute("CREATE SCHEMA IF NOT EXISTS {s}".format(s=fwa.schema))
-    fwa.db.execute(fwa.queries["functions"])
-    # load source data
+    fwa.db.execute('CREATE EXTENSION IF NOT EXISTS POSTGIS')
+    fwa.db.execute('CREATE EXTENSION IF NOT EXISTS LTREE')
+    fwa.db.execute('CREATE SCHEMA IF NOT EXISTS {s}'.format(s=fwa.schema))
+    fwa.db.execute(fwa.queries['functions'])
+
     click.echo('Loading FWA source data to PostgreSQL database')
-    if not layers:
-        in_layers = fwa.config["layers"]
-    else:
-        layers = layers.split(",")
-        in_layers = [l for l in fwa.config["layers"] if l["table"] in layers]
-    if skiplayers:
-        skiplayers = skiplayers.split(",")
-        skip_layers = [l for l in fwa.config["layers"] if l["table"] in skiplayers]
-        in_layers = list(set(in_layers).difference(set(skip_layers)))
-    for layer in in_layers:
-        click.echo('Loading '+layer['alias']+' to '+layer['table'])
-        # load layer
-        fwa.db.ogr2pg(os.path.join(fwa.config["dl_path"], layer["source"]),
-                      in_layer=layer['table'].upper(),
-                      out_layer=layer['table'],
-                      schema=fwa.schema)
+    # iterate through all data specified in config, loading only tables specified
+    for source_file in fwa.config['source_files']:
+        source_gdb = os.path.join(fwa.config['dl_path'],
+                                  os.path.splitext(source_file)[0])
+        for table in fwa.config['source_files'][source_file]:
+            if table in in_layers:
+                if fwa.config['source_files'][source_file][table]['grouped']:
+                    click.echo('Loading %s by watershed group' % table)
+                    groups = fiona.listlayers(source_gdb)
+                    for group in groups:
+                        fwa.db.ogr2pg(source_gdb,
+                                      in_layer=group,
+                                      out_layer=group.lower(),
+                                      schema=fwa.schema)
+                    # combine the groups into a single table
+                    # drop table if it exists
+                    fwa.db[fwa.schema+"."+table].drop()
+                    sql = '''CREATE TABLE {schema}.{table} AS
+                             SELECT * FROM {schema}.vict LIMIT 0
+                          '''.format(schema=fwa.schema, table=table)
+                    fwa.db.execute(sql)
+                    for group in groups:
+                        sql = '''INSERT INTO {schema}.{table}
+                                 SELECT * FROM {schema}.{g}
+                              '''.format(schema=fwa.schema,
+                                         table=table,
+                                         g=group.lower())
+                        fwa.db.execute(sql)
+                        # drop the source group table
+                        fwa.db[fwa.schema+"."+group.lower()].drop()
+                else:
+                    click.echo('Loading ' + table)
+                    fwa.db.ogr2pg(os.path.join(fwa.config['dl_path'], source_gdb),
+                                  in_layer=table.upper(),
+                                  out_layer=table,
+                                  schema=fwa.schema)
 
 
 @click.command()
-@click.option('--layers', '-l', help="Comma separated list of tables to load")
-@click.option('--skiplayers', '-sl', help="Comma separated list of tables to skip")
+@click.option('--layers', '-l', help='Comma separated list of tables to index')
+@click.option('--skiplayers', '-sl', help='Comma separated list of tables to skip')
 def index(layers, skiplayers):
-    """Clean and index FWA_BC.gdb in PostgreSQL
+    """Clean and index FWA data
     """
     fwa = fwakit.FWA()
+    in_layers = parse_layers(fwa, layers, skiplayers)
+
     click.echo('Modifying and indexing FWA tables in PostgreSQL database')
-    if not layers:
-        in_layers = fwa.config["layers"]
-    else:
-        layers = layers.split(",")
-        in_layers = [l for l in fwa.config["layers"] if l["table"] in layers]
-    if skiplayers:
-        skiplayers = skiplayers.split(",")
-        skip_layers = [l['alias'] for l in fwa.config["layers"] if l["table"] in skiplayers]
-        in_layers = [l for lin in in_layers if l['alias'] not in skip_layers]
     for layer in in_layers:
-        click.echo('Cleaning '+layer['table'])
+        click.echo('Cleaning ' + fwa.tables[layer])
         # drop ogr and esri columns
-        table = fwa.schema+"."+layer['table']
-        for column in ["ogc_fid", "geometry_area", "geometry_length"]:
+        table = fwa.tables[layer]
+        for column in ['ogc_fid', 'geometry_area', 'geometry_length']:
             if column in fwa.db[table].columns:
                 fwa.db[table].drop_column(column)
         # ensure _id primary/foreign keys are int - ogr maps them to floats
         # integer should be fine for all but linear_feature_id
         for column in fwa.db[table].columns:
             if column[-3:] == '_id':
-                if column == "linear_feature_id":
+                if column == 'linear_feature_id':
                     column_type = 'bigint'
                 else:
                     column_type = 'integer'
-                sql = """ALTER TABLE {t} ALTER COLUMN {col} TYPE {type}
-                      """.format(t=table, col=column, type=column_type)
+                sql = '''ALTER TABLE {t} ALTER COLUMN {col} TYPE {type}
+                      '''.format(t=table, col=column, type=column_type)
                 fwa.db.execute(sql)
         # add ltree columns to tables with watershed codes
         if 'fwa_watershed_code' in fwa.db[table].columns:
             click.echo('Adding ltree types and indexes')
             fwa.add_ltree(table)
         # add primary key constraint
-        fwa.db[table].add_primary_key(layer["id"])
-        click.echo("Adding indexes to %s" % layer["table"])
+        fwa.db[table].add_primary_key(fwa.config[layer]['id'])
+        click.echo('Adding indexes to %s' % table)
         # create indexes on columns noted in parameters
-        for column in layer["fields"]:
-            tablename = layer['table']
-            fwa.db[table].create_index([column], tablename+"_"+column+"_idx")
+        for column in fwa.config[layer]['index_fields']:
+            tablename = table.split('.')[1]
+            fwa.db[table].create_index([column], tablename+'_'+column+'_idx')
         # re-create geometry index
         if 'geom' in fwa.db[table].columns:
             fwa.db[table].create_index_geom()
     # create a simplified 20k-50k lookup table
-    fwa.create_lut_50k_20k_wsc()
+    if 'fwa_streams_20k_50k_wsc' in fwa.db.tables_in_schema(fwa.schema):
+        fwa.create_lut_50k_20k_wsc()
 
 
-cli.add_command(createdb)
 cli.add_command(download)
 cli.add_command(load)
 cli.add_command(index)
