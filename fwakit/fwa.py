@@ -12,14 +12,14 @@ import os
 import pkg_resources
 import re
 import datetime
-import yaml
 
+import yaml
 import sqlalchemy
 from sqlalchemy.dialects.postgresql import INTEGER, BIGINT
 
 import pgdb
+from . import config
 
-CONFIG = os.path.join(os.path.dirname(__file__), 'config.yml')
 PROCESS_LOG_INTERVAL = 100
 
 
@@ -27,10 +27,15 @@ class FWA(object):
     """
     Hold connection to FWA database
     """
-    def __init__(self, config=CONFIG, db=None, connect=True):
-        # load default config
-        with open(config) as config_file:
-            self.config = yaml.load(config_file)
+    def __init__(self, config=config.config, db=None, connect=True):
+        # load config - accept either a path or a dict
+        if isinstance(config, dict):
+            self.config = config
+        elif isinstance(config, str):
+            with open(config) as config_file:
+                self.config = yaml.load(config_file)
+        else:
+            raise ValueError('Config must be a string or a dict')
 
         # if no connection is provided, create one
         if not db:

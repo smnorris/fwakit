@@ -11,7 +11,13 @@ import fwakit
 from fwakit.scripts.cli import cli
 
 
-CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_config.yml")
+CONFIG = fwakit.config
+
+# Set testing config params
+CONFIG['source_url'] = 'http://www.hillcrestgeo.ca/fwakit/'
+CONFIG['db_url'] = 'postgresql://postgres:postgres@localhost:5432/fwa_test'
+CONFIG['dl_path'] = 'tests/source_data'
+
 FWA = fwakit.FWA(config=CONFIG)
 
 GROUPED_FILE = 'FWA_STREAM_NETWORKS_SP.gdb.zip'
@@ -24,14 +30,17 @@ SIMPLE_LAYER = 'fwa_lakes_poly'
 def test_download():
     runner = CliRunner()
     for f in [GROUPED_FILE, SIMPLE_FILE]:
-        runner.invoke(cli, ['download', '-f', f])
-        assert os.path.exists(os.path.join(FWA.config['dl_path'],
+        runner.invoke(cli, ['download', '-f', f,
+                                        '-u', CONFIG['source_url'],
+                                        '-p', CONFIG['dl_path']])
+        assert os.path.exists(os.path.join(CONFIG['dl_path'],
                                            os.path.splitext(f)[0]))
 
 
 def test_load_grouped():
     runner = CliRunner()
-    runner.invoke(cli, ['load', '-l', GROUPED_LAYER])
+    runner.invoke(cli, ['load', '-l', GROUPED_LAYER,
+                                '-p', CONFIG['dl_path']])
     assert GROUPED_LAYER in FWA.db.tables_in_schema(FWA.schema)
 
 

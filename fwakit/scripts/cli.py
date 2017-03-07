@@ -33,9 +33,9 @@ def cli():
 
 
 @click.command()
-@click.option('-f', '--files', help='List of files to download')
-@click.option('-u', '--source_url', help='URL to download from')
-@click.option('-p', '--dl_path', help='Local path to download files to')
+@click.option('--files', '-f', help='List of files to download')
+@click.option('--source_url', '-u', help='URL to download from')
+@click.option('--dl_path', '-p', help='Local path to download files to')
 def download(files, source_url, dl_path):
     """Download FWA gdb archives from GeoBC ftp
     """
@@ -62,7 +62,8 @@ def download(files, source_url, dl_path):
 @click.option('--layers', '-l', help='Comma separated list of tables to load')
 @click.option('--skiplayers', '-sl',
               help='Comma separated list of tables to skip')
-def load(layers, skiplayers):
+@click.option('--dl_path', '-p', help='Local path to download files to')
+def load(layers, skiplayers, dl_path, default=fwakit.config['dl_path']):
     """Load FWA data to PostgreSQL
     """
     fwa = fwakit.FWA()
