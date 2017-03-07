@@ -1,0 +1,22 @@
+*.pyc
+.coverage
+TEST*.xml
+build/*
+dist/*
+*.swp
+.DS_Store
+*.orig
+*.egg-info
+MANIFEST
+Vagrantfile
+.vagrant/*
+.coverage
+*.aux.xml
+*.ipynb_checkpoints*
+.idea
+venv
+.eggs
+
+# downloaded data
+source_data
+tests/source_data
