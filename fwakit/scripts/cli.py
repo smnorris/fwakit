@@ -34,12 +34,20 @@ def cli():
 
 @click.command()
 @click.option('-f', '--files', help='List of files to download')
-def download(files):
+@click.option('-u', '--source_url', help='URL to download from')
+@click.option('-p', '--dl_path', help='Local path to download files to')
+def download(files, source_url, dl_path):
     """Download FWA gdb archives from GeoBC ftp
     """
     fwa = fwakit.FWA()
     # download files from ftp
-    source_url = fwa.config['source_url']
+    if not source_url:
+        source_url = fwa.config['source_url']
+    if not dl_path:
+        dl_path = fwa.config['dl_path']
+    # check the url string, it must have a trailing /
+    if source_url[-1] != '/':
+        source_url = source_url+"/"
     if files:
         files = files.split(",")
     else:
@@ -47,7 +55,7 @@ def download(files):
     for source_file in files:
         url = urljoin(source_url, source_file)
         click.echo('Downloading '+source_file)
-        util.download_and_unzip(url, fwa.config['dl_path'])
+        util.download_and_unzip(url, dl_path)
 
 
 @click.command()
@@ -73,22 +81,24 @@ def load(layers, skiplayers):
                                   os.path.splitext(source_file)[0])
         for table in fwa.config['source_files'][source_file]:
             if table in in_layers:
-                if fwa.config['source_files'][source_file][table]['grouped']:
+                if 'grouped' in fwa.config['source_files'][source_file][table].keys():
                     click.echo('Loading %s by watershed group' % table)
-                    groups = fiona.listlayers(source_gdb)
-                    for group in groups:
+                    groups = [g for g in fiona.listlayers(source_gdb) if g[0] != '_']
+                    fwa.db[fwa.schema+"."+table].drop()
+                    for i, group in enumerate(sorted(groups)):
+                        click.echo(group)
                         fwa.db.ogr2pg(source_gdb,
                                       in_layer=group,
                                       out_layer=group.lower(),
-                                      schema=fwa.schema)
-                    # combine the groups into a single table
-                    # drop table if it exists
-                    fwa.db[fwa.schema+"."+table].drop()
-                    sql = '''CREATE TABLE {schema}.{table} AS
-                             SELECT * FROM {schema}.vict LIMIT 0
-                          '''.format(schema=fwa.schema, table=table)
-                    fwa.db.execute(sql)
-                    for group in groups:
+                                      schema=fwa.schema,
+                                      dim=3)
+                        # combine the groups into a single table
+                        if i == 0:
+                            sql = '''CREATE TABLE {schema}.{table} AS
+                                     SELECT * FROM {schema}.{g} LIMIT 0
+                                  '''.format(schema=fwa.schema, table=table,
+                                             g=group.lower())
+                            fwa.db.execute(sql)
                         sql = '''INSERT INTO {schema}.{table}
                                  SELECT * FROM {schema}.{g}
                               '''.format(schema=fwa.schema,
@@ -99,10 +109,11 @@ def load(layers, skiplayers):
                         fwa.db[fwa.schema+"."+group.lower()].drop()
                 else:
                     click.echo('Loading ' + table)
-                    fwa.db.ogr2pg(os.path.join(fwa.config['dl_path'], source_gdb),
+                    fwa.db.ogr2pg(source_gdb,
                                   in_layer=table.upper(),
                                   out_layer=table,
-                                  schema=fwa.schema)
+                                  schema=fwa.schema,
+                                  dim=3)
 
 
 @click.command()
@@ -114,7 +125,6 @@ def index(layers, skiplayers):
     fwa = fwakit.FWA()
     in_layers = parse_layers(fwa, layers, skiplayers)
 
-    click.echo('Modifying and indexing FWA tables in PostgreSQL database')
     for layer in in_layers:
         click.echo('Cleaning ' + fwa.tables[layer])
         # drop ogr and esri columns
@@ -133,6 +143,11 @@ def index(layers, skiplayers):
                 sql = '''ALTER TABLE {t} ALTER COLUMN {col} TYPE {type}
                       '''.format(t=table, col=column, type=column_type)
                 fwa.db.execute(sql)
+        # make sure there are no '<Null>' strings in codes
+        for column in ['fwa_watershed_code', 'local_watershed_code']:
+            sql = """UPDATE {t} SET {c} = NULL WHERE {c} = '<Null>'
+                  """.format(t=table, c=column)
+            fwa.db.execute(sql)
         # add ltree columns to tables with watershed codes
         if 'fwa_watershed_code' in fwa.db[table].columns:
             click.echo('Adding ltree types and indexes')

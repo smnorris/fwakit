@@ -1,9 +1,10 @@
 from __future__ import absolute_import
-
+import os
 
 import fwakit
 
-FWA = fwakit.FWA()
+CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_config.yml")
+FWA = fwakit.FWA(config=CONFIG)
 
 
 def test_initialize():
@@ -25,6 +26,16 @@ def test_get_local_code():
     assert FWA.trim_ws_code(FWA.get_local_code(354155107, 3400)) == \
       '920-076175-303123'
 
+
+def test_add_ltree():
+    table = FWA.schema+".fwa_stream_networks_sp"
+    if 'wscode_ltree' in FWA.db[table].columns:
+        FWA.db.execute("ALTER TABLE {t} DROP COLUMN wscode_ltree".format(t=table))
+    if 'localcode_ltree' in FWA.db[table].columns:
+        FWA.db.execute("ALTER TABLE {t} DROP COLUMN localcode_ltree".format(t=table))
+    FWA.add_ltree(FWA.schema+'.fwa_stream_networks_sp')
+    assert 'wscode_ltree' in FWA.db[FWA.schema+".fwa_stream_networks_sp"].columns
+    assert 'localcode_ltree' in FWA.db[FWA.schema+".fwa_stream_networks_sp"].columns
 
 # this works
 #def test_st_distance():

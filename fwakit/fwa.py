@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import INTEGER, BIGINT
 
 import pgdb
 
-
+CONFIG = os.path.join(os.path.dirname(__file__), 'config.yml')
 PROCESS_LOG_INTERVAL = 100
 
 
@@ -27,10 +27,8 @@ class FWA(object):
     """
     Hold connection to FWA database
     """
-    def __init__(self, config=None, db=None, connect=True):
-        # load config
-        if not config:
-            config = os.path.join(os.path.dirname(__file__), 'config.yml')
+    def __init__(self, config=CONFIG, db=None, connect=True):
+        # load default config
         with open(config) as config_file:
             self.config = yaml.load(config_file)
 
@@ -49,7 +47,7 @@ class FWA(object):
                 self.schema = db.schema
             # if no schema is specified, use schema in config
             else:
-                self.schema = self.config["schema"]
+                self.schema = self.config["db_schema"]
         # define shortcuts to tables
         self.tables = {}
         for source_file in self.config["source_files"]:
@@ -117,10 +115,8 @@ class FWA(object):
         else:
             return None
 
-    def add_ltree(self, table, column_lookup={"fwa_watershed_code":
-                                              "wscode_ltree",
-                                              "local_watershed_code":
-                                              "localcode_ltree"}):
+    def add_ltree(self, table, column_lookup={"fwa_watershed_code": "wscode_ltree",
+                                              "local_watershed_code": "localcode_ltree"}):
         """
         Add watershed code ltree types and indexes to specified table
         To speed things up this makes a copy of table, any existing
@@ -134,23 +130,24 @@ class FWA(object):
         temptable = schema+"."+"temp_ltree_copy"
         self.db[temptable].drop()
         ltree_list = []
+        # only add columns if not present
+        new_columns = [c for c in column_lookup.values() if c not in self.db[table].columns]
         for column in column_lookup:
-            if column in self.db[table].columns:
+            if column in self.db[table].columns and column_lookup[column] in new_columns:
                 ltree_list.append(
                     """CASE WHEN POSITION('-' IN wscode_trim({incolumn})) > 0
-                           THEN text2ltree(REPLACE(wscode_trim({incolumn}),'-','.'))
-                           ELSE  text2ltree(wscode_trim({incolumn}))
+                              THEN text2ltree(REPLACE(wscode_trim({incolumn}), '-', '.'))
+                            WHEN {incolumn} IS NULL THEN NULL
+                            ELSE text2ltree(wscode_trim({incolumn}))
                        END as {outcolumn}""".format(incolumn=column,
                                                     outcolumn=column_lookup[column]))
-        ltree_sql = ", \n".join(ltree_list)
+        ltree_sql = ", ".join(ltree_list)
         sql = """CREATE TABLE {temptable} AS
-                  SELECT
-                    *,
-                    {ltree_sql}
-                  FROM {table}""".format(temptable=temptable,
-                                         ltree_sql=ltree_sql,
-                                         table=table)
+                 SELECT *, {ltree_sql}
+                 FROM {table}
+              """.format(temptable=temptable, ltree_sql=ltree_sql, table=table)
         self.db.execute(sql)
+
         # drop original table
         self.db[table].drop()
         # rename new table back to original name
