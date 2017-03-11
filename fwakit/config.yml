@@ -117,6 +117,7 @@ source_files:
             - waterbody_key
             - watershed_group_code
             - gnis_name
+            - stream_order
   FWA_LINEAR_BOUNDARIES_SP.gdb.zip:
     fwa_linear_boundaries_sp:
           grouped: True
