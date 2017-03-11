@@ -6,18 +6,19 @@ Tools for working with BC Freshwater Atlas
   - methods for describing and interacting with event tables
 """
 
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import pkg_resources
 import re
 import datetime
-import json
-import tempfile
 
+import yaml
 import sqlalchemy
 from sqlalchemy.dialects.postgresql import INTEGER, BIGINT
 
 import pgdb
-
+from . import config
 
 PROCESS_LOG_INTERVAL = 100
 
@@ -26,19 +27,20 @@ class FWA(object):
     """
     Hold connection to FWA database
     """
-    def __init__(self, db=None, connect=True):
-        # load config
-        with open(os.path.join(os.path.dirname(__file__),
-                               'config.json')) as configfile:
-            self.config = json.load(configfile)
-        self.config["source_file"] = os.path.join(tempfile.gettempdir(),
-                                                  os.path.splitext(
-                                                    os.path.split(
-                                                      self.config["source"])[1])[0])
+    def __init__(self, config=config.config, db=None, connect=True):
+        # load config - accept either a path or a dict
+        if isinstance(config, dict):
+            self.config = config
+        elif isinstance(config, str):
+            with open(config) as config_file:
+                self.config = yaml.load(config_file)
+        else:
+            raise ValueError('Config must be a string or a dict')
+
         # if no connection is provided, create one
         if not db:
-            self.dburl = self.config["dburl"]
-            self.schema = self.config["schema"]
+            self.dburl = self.config["db_url"]
+            self.schema = self.config["db_schema"]
             if connect:
                 self.db = pgdb.connect(self.dburl)
         # if a connection is provided, use it
@@ -50,11 +52,16 @@ class FWA(object):
                 self.schema = db.schema
             # if no schema is specified, use schema in config
             else:
-                self.schema = self.config["schema"]
+                self.schema = self.config["db_schema"]
         # define shortcuts to tables
         self.tables = {}
-        for layer in self.config["layers"]:
-            self.tables[layer["alias"]] = self.schema+"."+layer["table"]
+        for source_file in self.config["source_files"]:
+            for table in self.config["source_files"][source_file]:
+                t = self.config["source_files"][source_file][table]
+                #self.tables[t["alias"]] = self.schema + "." + table
+                self.tables[table] = self.schema + "." + table
+                # add the configured table def to config attributes
+                self.config[table] = t
 
         self.log_interval = PROCESS_LOG_INTERVAL
         # note bad stream data
@@ -86,14 +93,14 @@ class FWA(object):
                                                                        str(idx),
                                                                        str(total),
                                                                        str(elapsed))
-            print outStr
+            print(outStr)
             self.startTime = datetime.datetime.utcnow()
 
     def list_groups(self, table=None):
         """Return sorted list of watershed groups in specified table
         """
         if not table:
-            table = self.tables["groups"]
+            table = self.tables["fwa_watershed_groups_poly"]
         groups = self.db[table].distinct("watershed_group_code")
         return sorted(groups)
 
@@ -113,10 +120,8 @@ class FWA(object):
         else:
             return None
 
-    def add_ltree(self, table, column_lookup={"fwa_watershed_code":
-                                              "wscode_ltree",
-                                              "local_watershed_code":
-                                              "localcode_ltree"}):
+    def add_ltree(self, table, column_lookup={"fwa_watershed_code": "wscode_ltree",
+                                              "local_watershed_code": "localcode_ltree"}):
         """
         Add watershed code ltree types and indexes to specified table
         To speed things up this makes a copy of table, any existing
@@ -130,32 +135,53 @@ class FWA(object):
         temptable = schema+"."+"temp_ltree_copy"
         self.db[temptable].drop()
         ltree_list = []
+        # only add columns if not present
+        new_columns = [c for c in column_lookup.values() if c not in self.db[table].columns]
         for column in column_lookup:
-            if column in self.db[table].columns:
+            if column in self.db[table].columns and column_lookup[column] in new_columns:
                 ltree_list.append(
                     """CASE WHEN POSITION('-' IN wscode_trim({incolumn})) > 0
-                           THEN text2ltree(REPLACE(wscode_trim({incolumn}),'-','.'))
-                           ELSE  text2ltree(wscode_trim({incolumn}))
+                              THEN text2ltree(REPLACE(wscode_trim({incolumn}), '-', '.'))
+                            WHEN {incolumn} IS NULL THEN NULL
+                            ELSE text2ltree(wscode_trim({incolumn}))
                        END as {outcolumn}""".format(incolumn=column,
                                                     outcolumn=column_lookup[column]))
-        ltree_sql = ", \n".join(ltree_list)
+        ltree_sql = ", ".join(ltree_list)
         sql = """CREATE TABLE {temptable} AS
-                  SELECT
-                    *,
-                    {ltree_sql}
-                  FROM {table}""".format(temptable=temptable,
-                                         ltree_sql=ltree_sql,
-                                         table=table)
+                 SELECT *, {ltree_sql}
+                 FROM {table}
+              """.format(temptable=temptable, ltree_sql=ltree_sql, table=table)
         self.db.execute(sql)
+
         # drop original table
         self.db[table].drop()
         # rename new table back to original name
         self.db[temptable].rename(tablename)
-        # create indexes
+        # create ltree indexes
         for column in column_lookup:
-            for index_type in ["btree", "gist"]:
-                self.db[table].create_index([column_lookup[column]],
-                                            index_type=index_type)
+            if column in self.db[table].columns:
+                for index_type in ["btree", "gist"]:
+                    self.db[table].create_index([column_lookup[column]],
+                                                index_type=index_type)
+
+    def create_lut_50k_20k_wsc(self, table='fwa_streams_20k_50k_wsc'):
+        """
+        Create a simplified lookup relating 50k codes to 20k codes, the source
+        lookup table relates linear_feature_id to 50k codes
+        """
+        self.db[self.schema+"."+table].drop()
+        sql = """CREATE TABLE {schema}.{table} AS
+                 SELECT DISTINCT
+                   watershed_code_50k,
+                   fwa_watershed_code_20k,
+                   watershed_group_code_20k
+                 FROM {schema}.fwa_streams_20k_50k
+                 ORDER BY watershed_code_50k, fwa_watershed_code_20k
+              """.format(schema=self.schema,
+                         table=table)
+        self.db.execute(sql)
+        self.db[self.schema+"."+table].create_index(['watershed_code_50k'])
+        self.db[self.schema+"."+table].create_index(['fwa_watershed_code_20k'])
 
     def get_events(self, table, pk, filters=None, param=None):
         """
