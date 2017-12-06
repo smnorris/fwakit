@@ -146,9 +146,10 @@ def index(layers, skiplayers):
                 fwa.db.execute(sql)
         # make sure there are no '<Null>' strings in codes
         for column in ['fwa_watershed_code', 'local_watershed_code']:
-            sql = """UPDATE {t} SET {c} = NULL WHERE {c} = '<Null>'
-                  """.format(t=table, c=column)
-            fwa.db.execute(sql)
+            if column in fwa.db[table].columns:
+                sql = """UPDATE {t} SET {c} = NULL WHERE {c} = '<Null>'
+                      """.format(t=table, c=column)
+                fwa.db.execute(sql)
         # add ltree columns to tables with watershed codes
         if 'fwa_watershed_code' in fwa.db[table].columns:
             click.echo('Adding ltree types and indexes')
