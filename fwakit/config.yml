@@ -1,10 +1,10 @@
 source_url: ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public/
+dl_path: source_data
 db_url: postgresql://postgres:postgres@localhost:5432/postgis
-dl_path: /Volumes/Data/Projects/env/fish_passage/model/fwakit/source_data
 db_schema: whse_basemapping
 
-# define source .gdb files, tables within them, and fields to index
-# for tables that are split into groups, identify as grouped: True
+# Define source .gdb files, tables within them, and fields to index
+# For tables that are split into groups, identify as grouped: True
 source_files:
   FWA_BC.gdb.zip:
     fwa_bays_and_channels_poly:

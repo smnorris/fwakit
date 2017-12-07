@@ -1,5 +1,5 @@
 """
-Tools for working with BC Freshwater Atlas
+Tools for working with BC Freshwater Atlas loaded to PostgreSQL
   - upstream / downstream query construction
   - conveniently connect to db
   - index tables, add ltree types for speeding of queries
@@ -24,8 +24,7 @@ PROCESS_LOG_INTERVAL = 100
 
 
 class FWA(object):
-    """
-    Hold connection to FWA database
+    """Hold connection to FWA database
     """
     def __init__(self, config=config.config, db=None, connect=True):
         # load config - accept either a path or a dict
@@ -58,22 +57,11 @@ class FWA(object):
         for source_file in self.config["source_files"]:
             for table in self.config["source_files"][source_file]:
                 t = self.config["source_files"][source_file][table]
-                #self.tables[t["alias"]] = self.schema + "." + table
                 self.tables[table] = self.schema + "." + table
                 # add the configured table def to config attributes
                 self.config[table] = t
 
         self.log_interval = PROCESS_LOG_INTERVAL
-        # note bad stream data
-        # these are linear_feature_ids for lines where watershed/local codes
-        # are non-standard, not permitting up/down stream queries
-        self.bad_linear_features = [110037498, 110037870, 110037183, 110037869,
-                                    110037877, 110037352, 110037541, 110037533,
-                                    110037537, 110037659, 832599689, 832631053,
-                                    831802658, 831896651, 707558014, 213037736,
-                                    213037642, 213037651, 700335558, 700335564]
-        # exclude entire blue lines
-        self.bad_blue_lines = [356349577]
         # load all queries in the sql folder
         self.queries = {}
         for f in pkg_resources.resource_listdir(__name__, "sql"):
@@ -81,6 +69,17 @@ class FWA(object):
             self.queries[key] = pkg_resources.resource_string(__name__,
                                                             os.path.join("sql",
                                                                          f))
+        # There are a handful of linear features where watershed codes are invalid
+        # for up/down stream queries, make sure they aren't used
+        self.tables['fwa_invalid_codes'] = self.schema+'.fwa_invalid_codes'
+        if self.tables['fwa_stream_networks_sp'] in self.db.tables:
+            if self.tables['fwa_invalid_codes'] not in self.db.tables:
+                lookup = {'InTable': self.tables['fwa_stream_networks_sp'],
+                          'OutTable': self.tables['fwa_invalid_codes']}
+                self.db.execute(self.db.build_query(
+                                self.queries["invalid_codes"], lookup))
+            self.invalid_streams = (self.db[self.tables['fwa_invalid_codes']]
+                                        .distinct('linear_feature_id'))
 
     def note_progress(self, function, idx, total, start_time):
         '''
@@ -107,7 +106,6 @@ class FWA(object):
     def trim_ws_code(self, code):
         """Trim the trailing zeros from input watershed code/local code
         """
-
         return re.sub(r"(\-000000)+$", "", code)
 
     def get_local_code(self, blue_line_key, measure):

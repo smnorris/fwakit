@@ -3,12 +3,16 @@ import os
 
 import fwakit
 
-CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_config.yml")
-FWA = fwakit.FWA(config=CONFIG)
+CONFIG = fwakit.config
+
+# Set testing config params
+CONFIG['db_url'] = 'postgresql://postgres:postgres@localhost:5432/fwa_test'
+
+FWA = fwakit.FWA()
 
 
 def test_initialize():
-    assert FWA.bad_linear_features[0] == 110037498
+    assert FWA.invalid_streams[0] == 701241277
 
 
 def test_trim_ws_code():

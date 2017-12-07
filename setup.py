@@ -52,6 +52,6 @@ setup(name='fwakit',
       },
       entry_points="""
       [console_scripts]
-      fwakit=fwakit.scripts.cli:cli
+      fwakit=fwakit.cli:cli
       """
       )

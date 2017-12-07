@@ -4,5 +4,5 @@ exclude MANIFEST.in
 exclude *.txt *.py
 recursive-include tests *.py
 include CHANGES.txt LICENSE.txt README.md
-include setup.py requirements.txt
+include requirements.txt
 include fwakit/config.yml

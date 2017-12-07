@@ -27,12 +27,18 @@ def parse_layers(fwa, layers, skiplayers):
     return in_layers
 
 
+def validate_format(ctx, param, value):
+    if value in ['GPKG', 'FileGDB']:
+        return value
+    else:
+        raise click.BadParameter("Format '{}' is not supported".format(value))
+
 @click.group()
 def cli():
     pass
 
 
-@click.command()
+@cli.command()
 @click.option('--files', '-f', help='List of files to download')
 @click.option('--source_url', '-u', help='URL to download from')
 @click.option('--dl_path', '-p', help='Local path to download files to')
@@ -58,7 +64,7 @@ def download(files, source_url, dl_path):
         util.download_and_unzip(url, dl_path)
 
 
-@click.command()
+@cli.command()
 @click.option('--layers', '-l', help='Comma separated list of tables to load')
 @click.option('--skiplayers', '-sl',
               help='Comma separated list of tables to skip')
@@ -116,16 +122,7 @@ def load(layers, skiplayers, dl_path, default=fwakit.config['dl_path']):
                                   schema=fwa.schema,
                                   dim=3)
 
-
-@click.command()
-@click.option('--layers', '-l', help='Comma separated list of tables to index')
-@click.option('--skiplayers', '-sl', help='Comma separated list of tables to skip')
-def index(layers, skiplayers):
-    """Clean and index FWA data
-    """
-    fwa = fwakit.FWA()
-    in_layers = parse_layers(fwa, layers, skiplayers)
-
+    # Clean and index the data
     for layer in in_layers:
         click.echo('Cleaning ' + fwa.tables[layer])
         # drop ogr and esri columns
@@ -169,6 +166,51 @@ def index(layers, skiplayers):
         fwa.create_lut_50k_20k_wsc()
 
 
-cli.add_command(download)
-cli.add_command(load)
-cli.add_command(index)
+@cli.command()
+@click.option('--out_path', '-o', type=click.Path(exists=True), help='Path to dump .gdb files')
+@click.option('--tables', '-t', help='Comma separated list of tables to dump',
+              default='fwa_stream_networks_sp,fwa_watershed_groups_poly,fwa_lakes_poly')
+@click.option('--wsg', '-g', default='VICT', help='Watershed group code to dump')
+@click.option('--out_format', '-of', default='GPKG', callback=validate_format,
+              help='Output (ogr) format. Default GPKG (Geopackage)')
+def dump(out_path, tables, wsg, out_format):
+    """Dump sample data to file
+    """
+    dump_tables = tables
+    fwa = fwakit.FWA()
+    for source_file in fwa.config['source_files']:
+        for table in fwa.config['source_files'][source_file]:
+            if table in dump_tables:
+                # out file name is taken directly from config
+                out_file = os.path.splitext(source_file)[0]
+                # prepend out path to file name
+                if out_path:
+                    out_file = os.path.join(out_path, out_file)
+                # modify the file extension if writing to gpkg
+                if out_format == 'GPKG':
+                    out_file = out_file.replace('.gdb', '.gpkg')
+                # get geometry type if dumping to gdb
+                if out_format == 'FileGDB':
+                    sql = """SELECT geometrytype(geom)
+                             FROM {t} LIMIT 1""".format(t=fwa.tables[table])
+                    geom_type = fwa.db.query(sql).fetchone()[0]
+                else:
+                    geom_type = None
+                columns = fwa.db[fwa.tables[table]].columns
+                # don't try and dump ltree types
+                columns = [c for c in columns if 'ltree' not in c]
+                sql = """SELECT {c} FROM {t}
+                         WHERE watershed_group_code = '{g}'
+                      """.format(c=', '.join(columns),
+                                 t=fwa.tables[table],
+                                 g=wsg)
+                if 'grouped' not in fwa.config['source_files'][source_file][table].keys():
+                    outlayer = table
+                else:
+                    outlayer = wsg
+                fwa.db.pg2ogr(sql, out_format, out_file, outlayer=outlayer,
+                              geom_type=geom_type)
+
+
+if __name__ == '__main__':
+    cli()
