@@ -14,7 +14,6 @@ Create a PostGIS enabled PostgreSQL database then edit `config.yml` to point to 
 
 `db_url: postgresql://postgres:postgres@localhost:5432/fwa_db_name`
 
-
 ## usage
 
 Get FWA data from GeoBC:  
@@ -25,7 +24,16 @@ Load all FWA data to postgres, repair, index, optimize:
 
 Use fwakit in Python:
 ```
-import fwakit
-fwa = fwakit.FWA()
-fwa.dostuff()
+import fwakit as fwa
+from fwakit import stream
+from fwakit import lake
+
+mystream = stream(blue_line_key=123456)
+mylake = lake(waterbody_polygon_id=123456)
+points = 'my_points_table'
+
+fwa.dostuff(stream, points)
+>>['stream','point','stuff1']
+fwa.dostuff(lake, points)
+>>['lake','point','stuff1','stuffa']
 ```

@@ -1,45 +1,34 @@
 from __future__ import absolute_import
-import os
 
-import fwakit
-
-CONFIG = fwakit.config
-
-# Set testing config params
-CONFIG['db_url'] = 'postgresql://postgres:postgres@localhost:5432/fwa_test'
-
-FWA = fwakit.FWA()
-
-
-def test_initialize():
-    assert FWA.invalid_streams[0] == 701241277
+import fwakit as fwa
 
 
 def test_trim_ws_code():
-    assert '920' == FWA.trim_ws_code('920-000000')
-    assert '920-123456' == FWA.trim_ws_code('920-123456-000000')
+    assert '920' == fwa.trim_ws_code('920-000000')
+    assert '920-123456' == fwa.trim_ws_code('920-123456-000000')
 
 
 def test_list_groups():
-    groups = FWA.list_groups(table=FWA.schema+'.fwa_stream_networks_sp')
+    groups = fwa.list_groups(table='whse_basemapping.fwa_stream_networks_sp')
     assert groups[0] == 'VICT'
     assert len(groups) == 1
 
 
 def test_get_local_code():
-    assert FWA.trim_ws_code(FWA.get_local_code(354155107, 3400)) == \
-      '920-076175-303123'
+    assert (fwa.trim_ws_code(fwa.get_local_code(354155107, 3400)) ==
+            '920-076175-303123')
 
 
 def test_add_ltree():
-    table = FWA.schema+".fwa_stream_networks_sp"
-    if 'wscode_ltree' in FWA.db[table].columns:
-        FWA.db.execute("ALTER TABLE {t} DROP COLUMN wscode_ltree".format(t=table))
-    if 'localcode_ltree' in FWA.db[table].columns:
-        FWA.db.execute("ALTER TABLE {t} DROP COLUMN localcode_ltree".format(t=table))
-    FWA.add_ltree(FWA.schema+'.fwa_stream_networks_sp')
-    assert 'wscode_ltree' in FWA.db[FWA.schema+".fwa_stream_networks_sp"].columns
-    assert 'localcode_ltree' in FWA.db[FWA.schema+".fwa_stream_networks_sp"].columns
+    table = 'whse_basemapping.fwa_stream_networks_sp'
+    db = fwa.util.connect()
+    if 'wscode_ltree' in db[table].columns:
+        db.execute("ALTER TABLE {t} DROP COLUMN wscode_ltree".format(t=table))
+    if 'localcode_ltree' in db[table].columns:
+        db.execute("ALTER TABLE {t} DROP COLUMN localcode_ltree".format(t=table))
+    fwa.add_ltree('whse_basemapping.fwa_stream_networks_sp')
+    assert 'wscode_ltree' in db['whse_basemapping.fwa_stream_networks_sp'].columns
+    assert 'localcode_ltree' in db['whse_basemapping.fwa_stream_networks_sp'].columns
 
 # this works
 #def test_st_distance():
