@@ -33,27 +33,18 @@ def test_download():
 
 def test_load_grouped():
     runner = CliRunner()
-    db = fwa.util.connect()
     runner.invoke(cli, ['load', '-l', GROUPED_LAYER,
-                                '-p', DL_PATH])
+                                '-p', DL_PATH,
+                                '-db', DB_URL])
+    db = fwa.util.connect(DB_URL)
     assert GROUPED_LAYER in db.tables_in_schema('whse_basemapping')
+    assert 'ogc_fid' not in db['whse_basemapping.'+GROUPED_LAYER].columns
+    assert 'wscode_ltree' in db['whse_basemapping.'+GROUPED_LAYER].columns
 
 
 def test_load_simple():
     runner = CliRunner()
-    db = fwa.util.connect()
+    db = fwa.util.connect(DB_URL)
     runner.invoke(cli, ['load', '-l', SIMPLE_LAYER,
                                 '-p', DL_PATH])
     assert SIMPLE_LAYER in db.tables_in_schema('whse_basemapping')
-
-
-def test_index():
-    runner = CliRunner()
-    runner.invoke(cli, ['index', '-l', GROUPED_LAYER])
-    db = fwa.util.connect()
-    assert 'ogc_fid' not in db['whse_basemapping.'+GROUPED_LAYER].columns
-    assert 'wscode_ltree' in db['whse_basemapping.'+GROUPED_LAYER].columns
-    # todo, test for index presence
-    #n_columns = len(FWA.config[GROUPED_LAYER]['index_fields'])
-    #indexes = FWA.db[FWA.schema+"."+GROUPED_LAYER].indexes.keys()
-

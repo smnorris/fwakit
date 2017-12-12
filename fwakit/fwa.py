@@ -62,39 +62,40 @@ def add_ltree(table, column_lookup={"fwa_watershed_code": "wscode_ltree",
     """
     if not db:
         db = util.connect()
-    # create new table
-    temptable = 'whse_basemapping.temp_ltree_copy'
-    db[temptable].drop()
-    ltree_list = []
     # only add columns if not present
     new_columns = [c for c in column_lookup.values() if c not in db[table].columns]
-    for column in column_lookup:
-        if column in db[table].columns and column_lookup[column] in new_columns:
-            ltree_list.append(
-                """CASE WHEN POSITION('-' IN wscode_trim({incolumn})) > 0
-                          THEN text2ltree(REPLACE(wscode_trim({incolumn}), '-', '.'))
-                        WHEN {incolumn} IS NULL THEN NULL
-                        ELSE text2ltree(wscode_trim({incolumn}))
-                   END as {outcolumn}""".format(incolumn=column,
-                                                outcolumn=column_lookup[column]))
-    ltree_sql = ", ".join(ltree_list)
-    sql = """CREATE TABLE {temptable} AS
-             SELECT *, {ltree_sql}
-             FROM {table}
-          """.format(temptable=temptable, ltree_sql=ltree_sql, table=table)
-    db.execute(sql)
+    if new_columns:
+         # create new table
+        temptable = 'whse_basemapping.temp_ltree_copy'
+        db[temptable].drop()
+        ltree_list = []
+        for column in column_lookup:
+            if column in db[table].columns and column_lookup[column] in new_columns:
+                ltree_list.append(
+                    """CASE WHEN POSITION('-' IN wscode_trim({incolumn})) > 0
+                              THEN text2ltree(REPLACE(wscode_trim({incolumn}), '-', '.'))
+                            WHEN {incolumn} IS NULL THEN NULL
+                            ELSE text2ltree(wscode_trim({incolumn}))
+                       END as {outcolumn}""".format(incolumn=column,
+                                                    outcolumn=column_lookup[column]))
+        ltree_sql = ", ".join(ltree_list)
+        sql = """CREATE TABLE {temptable} AS
+                 SELECT *, {ltree_sql}
+                 FROM {table}
+              """.format(temptable=temptable, ltree_sql=ltree_sql, table=table)
+        db.execute(sql)
 
-    # drop original table
-    db[table].drop()
-    # rename new table back to original name
-    _, tablename = db.parse_table_name(table)
-    db[temptable].rename(tablename)
-    # create ltree indexes
-    for column in column_lookup:
-        if column in db[table].columns:
-            for index_type in ["btree", "gist"]:
-                db[table].create_index([column_lookup[column]],
-                                       index_type=index_type)
+        # drop original table
+        db[table].drop()
+        # rename new table back to original name
+        _, tablename = db.parse_table_name(table)
+        db[temptable].rename(tablename)
+        # create ltree indexes
+        for column in column_lookup:
+            if column in db[table].columns:
+                for index_type in ["btree", "gist"]:
+                    db[table].create_index([column_lookup[column]],
+                                           index_type=index_type)
 
 
 def get_events(self, table, pk, filters=None, param=None):

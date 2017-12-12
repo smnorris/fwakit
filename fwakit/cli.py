@@ -11,6 +11,7 @@ import click
 import fiona
 
 import fwakit as fwa
+from . import settings
 
 
 def parse_layers(layers, skiplayers):
@@ -41,9 +42,9 @@ def cli():
 @cli.command()
 @click.option('--files', '-f', help='List of files to download')
 @click.option('--source_url', '-u', help='URL to download from',
-              default=fwa.config['source_url'])
+              default=settings.source_url)
 @click.option('--dl_path', '-p', help='Local path to download files to',
-              default=fwa.config['dl_path'])
+              default=settings.dl_path)
 def download(files, source_url, dl_path):
     """Download FWA gdb archives from GeoBC ftp
     """
@@ -54,7 +55,7 @@ def download(files, source_url, dl_path):
     if files:
         files = files.split(",")
     else:
-        files = fwa.config['data_def']
+        files = settings.sources_dict
     for source_file in files:
         url = urljoin(source_url, source_file)
         click.echo('Downloading '+source_file)
@@ -65,11 +66,14 @@ def download(files, source_url, dl_path):
 @click.option('--layers', '-l', help='Comma separated list of tables to load')
 @click.option('--skiplayers', '-sl',
               help='Comma separated list of tables to skip')
-@click.option('--dl_path', '-p', help='Local path to download files to')
-def load(layers, skiplayers, dl_path, default=fwa.config['dl_path']):
+@click.option('--dl_path', '-p', help='Local path to download files to',
+              default=settings.dl_path)
+@click.option('--db_url', '-db', help='Database to load files to',
+              default=settings.db_url)
+def load(layers, skiplayers, dl_path, db_url):
     """Load FWA data to PostgreSQL
     """
-    db = fwa.util.connect()
+    db = fwa.util.connect(db_url)
     # parse the input layers
     in_layers = parse_layers(layers, skiplayers)
     # create required extenstions/functions/schema if they don't exist
@@ -80,12 +84,12 @@ def load(layers, skiplayers, dl_path, default=fwa.config['dl_path']):
 
     click.echo('Loading FWA source data to PostgreSQL database')
     # iterate through all data specified in config, loading only tables specified
-    for source_file in fwa.config['data_def']:
-        source_gdb = os.path.join(fwa.config['dl_path'],
+    for source_file in settings.sources_dict:
+        source_gdb = os.path.join(dl_path,
                                   os.path.splitext(source_file)[0])
-        for table in fwa.config['source_files'][source_file]:
+        for table in settings.sources_dict[source_file]:
             if table in in_layers:
-                if 'grouped' in fwa.config['source_files'][source_file][table].keys():
+                if 'grouped' in settings.sources_dict[source_file][table].keys():
                     click.echo('Loading %s by watershed group' % table)
                     groups = [g for g in fiona.listlayers(source_gdb) if g[0] != '_']
                     db['whse_basemapping.'+table].drop()
@@ -117,49 +121,53 @@ def load(layers, skiplayers, dl_path, default=fwa.config['dl_path']):
                               dim=3)
 
     # Clean and index the data
-    for layer in in_layers:
-        click.echo('Cleaning ' + fwa.tables[layer])
-        # drop ogr and esri columns
-        table = fwa.tables[layer]
-        for column in ['ogc_fid', 'geometry_area', 'geometry_length']:
-            if column in db[table].columns:
-                db[table].drop_column(column)
-        # ensure _id primary/foreign keys are int - ogr maps them to floats
-        # integer should be fine for all but linear_feature_id
-        for column in db[table].columns:
-            if column[-3:] == '_id':
-                if column == 'linear_feature_id':
-                    column_type = 'bigint'
-                else:
-                    column_type = 'integer'
-                sql = '''ALTER TABLE {t} ALTER COLUMN {col} TYPE {type}
-                      '''.format(t=table, col=column, type=column_type)
-                db.execute(sql)
-        # make sure there are no '<Null>' strings in codes
-        for column in ['fwa_watershed_code', 'local_watershed_code']:
-            if column in db[table].columns:
-                sql = """UPDATE {t} SET {c} = NULL WHERE {c} = '<Null>'
-                      """.format(t=table, c=column)
-                db.execute(sql)
-        # add ltree columns to tables with watershed codes
-        if 'fwa_watershed_code' in db[table].columns:
-            click.echo('Adding ltree types and indexes')
-            fwa.add_ltree(table)
-        # add primary key constraint
-        db[table].add_primary_key(fwa.config[layer]['id'])
-        click.echo('Adding indexes to %s' % table)
-        # create indexes on columns noted in parameters
-        for column in fwa.config[layer]['index_fields']:
-            tablename = table.split('.')[1]
-            db[table].create_index([column], tablename+'_'+column+'_idx')
-        # re-create geometry index
-        if 'geom' in db[table].columns:
-            db[table].create_index_geom()
+    for source_file in settings.sources_dict:
+        for layer in settings.sources_dict[source_file]:
+            if layer in in_layers:
+                click.echo(fwa.tables[layer]+': cleaning')
+                # drop ogr and esri columns
+                table = fwa.tables[layer]
+                for column in ['ogc_fid', 'geometry_area', 'geometry_length']:
+                    if column in db[table].columns:
+                        db[table].drop_column(column)
+                # ensure _id primary/foreign keys are int - ogr maps them to floats
+                # integer should be fine for all but linear_feature_id
+                for column in db[table].columns:
+                    if column[-3:] == '_id':
+                        if column == 'linear_feature_id':
+                            column_type = 'bigint'
+                        else:
+                            column_type = 'integer'
+                        sql = '''ALTER TABLE {t} ALTER COLUMN {col} TYPE {type}
+                              '''.format(t=table, col=column, type=column_type)
+                        db.execute(sql)
+                # make sure there are no '<Null>' strings in codes
+                for column in ['fwa_watershed_code', 'local_watershed_code']:
+                    if column in db[table].columns:
+                        sql = """UPDATE {t} SET {c} = NULL WHERE {c} = '<Null>'
+                              """.format(t=table, c=column)
+                        db.execute(sql)
+                # add ltree columns to tables with watershed codes
+                if 'fwa_watershed_code' in db[table].columns:
+                    click.echo(fwa.tables[layer]+': adding ltree types')
+                    fwa.add_ltree(table)
+                # add primary key constraint
+                db[table].add_primary_key(settings.sources_dict[source_file][layer]['id'])
+                click.echo(fwa.tables[layer]+': indexing')
+                # create indexes on columns noted in parameters
+                for column in settings.sources_dict[source_file][layer]['index_fields']:
+                    tablename = table.split('.')[1]
+                    db[table].create_index([column], tablename+'_'+column+'_idx')
+                # re-create geometry index
+                if 'geom' in db[table].columns:
+                    db[table].create_index_geom()
     # create lookups
     # - simplified 20k-50k lookup
     # - lut of streams with codes that cannot be used for up-downstream queries
-    db.execute(fwa.queries['create_lut_50k_20k_wsc'])
-    db.execute(fwa.queries['create_invalid_codes'])
+    if 'whse_basemapping.fwa_streams_20k_50k' in db.tables:
+        db.execute(fwa.queries['create_lut_50k_20k_wsc'])
+    if 'whse_basemapping.fwa_stream_networks_sp' in db.tables:
+        db.execute(fwa.queries['create_invalid_codes'])
 
 
 @cli.command()
@@ -174,8 +182,8 @@ def dump(out_path, tables, wsg, out_format):
     """
     db = fwa.util.connect()
     dump_tables = tables
-    for source_file in fwa.config['data_def']:
-        for table in fwa.config['data_def'][source_file]:
+    for source_file in settings.sources_dict:
+        for table in settings.sources_dict[source_file]:
             if table in dump_tables:
                 # out file name is taken directly from config
                 out_file = os.path.splitext(source_file)[0]
@@ -200,7 +208,7 @@ def dump(out_path, tables, wsg, out_format):
                       """.format(c=', '.join(columns),
                                  t=fwa.tables[table],
                                  g=wsg)
-                if 'grouped' not in fwa.config['data_def'][source_file][table].keys():
+                if 'grouped' not in settings.sources_dict[source_file][table].keys():
                     outlayer = table
                 else:
                     outlayer = wsg
