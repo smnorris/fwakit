@@ -43,7 +43,6 @@ setup(name='fwakit',
           'sqlalchemy',
           'requests',
           'click',
-          'fiona',
           'pyyaml',
           'pgdb'
         ],

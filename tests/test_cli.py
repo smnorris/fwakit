@@ -16,6 +16,7 @@ DL_PATH = 'test_data'
 
 GROUPED_FILE = 'FWA_STREAM_NETWORKS_SP.gdb.zip'
 GROUPED_LAYER = 'fwa_stream_networks_sp'
+GROUP = 'VICT'
 
 SIMPLE_FILE = 'FWA_BC.gdb.zip'
 SIMPLE_LAYER = 'fwa_lakes_poly'
@@ -35,7 +36,8 @@ def test_load_grouped():
     runner = CliRunner()
     runner.invoke(cli, ['load', '-l', GROUPED_LAYER,
                                 '-p', DL_PATH,
-                                '-db', DB_URL])
+                                '-db', DB_URL,
+                                '-g', GROUP])
     db = fwa.util.connect(DB_URL)
     assert GROUPED_LAYER in db.tables_in_schema('whse_basemapping')
     assert 'ogc_fid' not in db['whse_basemapping.'+GROUPED_LAYER].columns
@@ -46,5 +48,6 @@ def test_load_simple():
     runner = CliRunner()
     db = fwa.util.connect(DB_URL)
     runner.invoke(cli, ['load', '-l', SIMPLE_LAYER,
-                                '-p', DL_PATH])
+                                '-p', DL_PATH,
+                                '-db', DB_URL])
     assert SIMPLE_LAYER in db.tables_in_schema('whse_basemapping')

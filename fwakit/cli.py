@@ -8,7 +8,6 @@ except ImportError:
 import os
 
 import click
-import fiona
 
 import fwakit as fwa
 from . import settings
@@ -70,7 +69,8 @@ def download(files, source_url, dl_path):
               default=settings.dl_path)
 @click.option('--db_url', '-db', help='Database to load files to',
               default=settings.db_url)
-def load(layers, skiplayers, dl_path, db_url):
+@click.option('--wsg', '-g', help='List of group codes to load')
+def load(layers, skiplayers, dl_path, db_url, wsg):
     """Load FWA data to PostgreSQL
     """
     db = fwa.util.connect(db_url)
@@ -87,12 +87,34 @@ def load(layers, skiplayers, dl_path, db_url):
     for source_file in settings.sources_dict:
         source_gdb = os.path.join(dl_path,
                                   os.path.splitext(source_file)[0])
+        # load data that is not split up by watershed group
+        for table in settings.sources_dict[source_file]:
+            if table in in_layers:
+                if 'grouped' not in settings.sources_dict[source_file][table].keys():
+                    click.echo('Loading ' + table)
+                    if not wsg:
+                        db.ogr2pg(source_gdb,
+                                  in_layer=table.upper(),
+                                  out_layer=table,
+                                  schema='whse_basemapping',
+                                  dim=3)
+                    else:
+                        db.ogr2pg(source_gdb,
+                                  in_layer=table.upper(),
+                                  out_layer=table,
+                                  schema='whse_basemapping',
+                                  sql='watershed_group_code IN ({g})'.format(g=wsg),
+                                  dim=3)
+        # load data that *is* split up by watershed group
         for table in settings.sources_dict[source_file]:
             if table in in_layers:
                 if 'grouped' in settings.sources_dict[source_file][table].keys():
                     click.echo('Loading %s by watershed group' % table)
-                    groups = [g for g in fiona.listlayers(source_gdb) if g[0] != '_']
                     db['whse_basemapping.'+table].drop()
+                    if wsg:
+                        groups = wsg.split(',')
+                    else:
+                        groups = fwa.list_groups(db=db)
                     for i, group in enumerate(sorted(groups)):
                         click.echo(group)
                         db.ogr2pg(source_gdb,
@@ -112,13 +134,7 @@ def load(layers, skiplayers, dl_path, db_url):
                         db.execute(sql)
                         # drop the source group table
                         db['whse_basemapping.'+group.lower()].drop()
-                else:
-                    click.echo('Loading ' + table)
-                    db.ogr2pg(source_gdb,
-                              in_layer=table.upper(),
-                              out_layer=table,
-                              schema='whse_basemapping',
-                              dim=3)
+
 
     # Clean and index the data
     for source_file in settings.sources_dict:
@@ -150,7 +166,7 @@ def load(layers, skiplayers, dl_path, db_url):
                 # add ltree columns to tables with watershed codes
                 if 'fwa_watershed_code' in db[table].columns:
                     click.echo(fwa.tables[layer]+': adding ltree types')
-                    fwa.add_ltree(table)
+                    fwa.add_ltree(table, db=db)
                 # add primary key constraint
                 db[table].add_primary_key(settings.sources_dict[source_file][layer]['id'])
                 click.echo(fwa.tables[layer]+': indexing')
@@ -169,7 +185,10 @@ def load(layers, skiplayers, dl_path, db_url):
     if 'whse_basemapping.fwa_stream_networks_sp' in db.tables:
         db.execute(fwa.queries['create_invalid_codes'])
     # create named streams table
-    db.execute(fwa.queries['named_streams'])
+    if ('whse_basemapping.fwa_stream_networks_sp' in db.tables and
+            'whse_basemapping.fwa_lakes_poly' in db.tables and
+            'whse_basemapping.fwa_manmade_waterbodies_poly' in db.tables):
+        db.execute(fwa.queries['named_streams'])
 
 
 @cli.command()
