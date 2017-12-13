@@ -1,10 +1,10 @@
-from codecs import open as codecs_open
+import os
 from setuptools import setup, find_packages
 
 
-# Get the long description from the relevant file
-with codecs_open('README.md', encoding='utf-8') as f:
-    long_description = f.read()
+def read(fname):
+    return open(os.path.join(os.path.dirname(__file__), fname)).read()
+
 
 # Parse the version from the pgdb module.
 with open('fwakit/__init__.py', 'r') as f:
@@ -18,7 +18,7 @@ with open('fwakit/__init__.py', 'r') as f:
 setup(name='fwakit',
       version=version,
       description=u"Python / PostgreSQL tools for working with BC Freshwater Atlas",
-      long_description=long_description,
+      long_description=read('README.md'),
       classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
@@ -39,13 +39,7 @@ setup(name='fwakit',
       dependency_links=['http://github.com/smnorris/pgdb/tarball/master#egg=pgdb-0.0.3'],
       include_package_data=True,
       zip_safe=False,
-      install_requires=[
-          'sqlalchemy',
-          'requests',
-          'click',
-          'pyyaml',
-          'pgdb'
-        ],
+      install_requires=read('requirements.txt').splitlines(),
       extras_require={
           'test': ['pytest'],
       },

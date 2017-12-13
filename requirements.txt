@@ -1,1 +1,6 @@
-.
+sqlalchemy
+requests
+click
+pyyaml
+pgdb
+        
