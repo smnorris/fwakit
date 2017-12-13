@@ -168,6 +168,8 @@ def load(layers, skiplayers, dl_path, db_url):
         db.execute(fwa.queries['create_lut_50k_20k_wsc'])
     if 'whse_basemapping.fwa_stream_networks_sp' in db.tables:
         db.execute(fwa.queries['create_invalid_codes'])
+    # create named streams table
+    db.execute(fwa.queries['named_streams'])
 
 
 @cli.command()
