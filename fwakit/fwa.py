@@ -8,15 +8,31 @@ Tools for working with BC Freshwater Atlas loaded to PostgreSQL
 
 from __future__ import absolute_import
 
-import re
 import datetime
+import os
+import pkg_resources
+import re
 
-
-import sqlalchemy
 from sqlalchemy.dialects.postgresql import INTEGER, BIGINT
 
 import fwakit as fwa
 from fwakit import util
+
+
+class QueryDict(object):
+    def __init__(self):
+        self.queries = None
+
+    def __getitem__(self, query_name):
+        if pkg_resources.resource_exists(__name__, os.path.join("sql", query_name+'.sql')):
+            return pkg_resources.resource_string(
+                __name__,
+                os.path.join("sql", query_name+'.sql')).decode('utf-8')
+
+        else:
+            raise ValueError("Invalid query name: %r" % query_name)
+
+#queries = QueryDict()
 
 
 def list_groups(table=None, db=None):
@@ -41,7 +57,7 @@ def get_local_code(blue_line_key, measure, db=None):
     """
     if not db:
         db = util.connect()
-    result = db.query_one(fwa.queries["get_local_code"],
+    result = db.query_one(fwa.queries['get_local_code'],
                           (blue_line_key, measure))
     if result:
         return result[0]
@@ -72,14 +88,14 @@ def add_ltree(table, column_lookup={"fwa_watershed_code": "wscode_ltree",
         for column in column_lookup:
             if column in db[table].columns and column_lookup[column] in new_columns:
                 ltree_list.append(
-                    """CASE WHEN POSITION('-' IN wscode_trim({incolumn})) > 0
-                              THEN text2ltree(REPLACE(wscode_trim({incolumn}), '-', '.'))
+                    """CASE WHEN POSITION('-' IN fwa_trimwsc({incolumn})) > 0
+                              THEN text2ltree(REPLACE(fwa_trimwsc({incolumn}), '-', '.'))
                             WHEN {incolumn} IS NULL THEN NULL
-                            ELSE text2ltree(wscode_trim({incolumn}))
+                            ELSE text2ltree(fwa_trimwsc({incolumn}))
                        END as {outcolumn}""".format(incolumn=column,
                                                     outcolumn=column_lookup[column]))
         ltree_sql = ", ".join(ltree_list)
-        sql = """CREATE TABLE {temptable} AS
+        sql = """CREATE UNLOGGED TABLE {temptable} AS
                  SELECT *, {ltree_sql}
                  FROM {table}
               """.format(temptable=temptable, ltree_sql=ltree_sql, table=table)
@@ -90,6 +106,10 @@ def add_ltree(table, column_lookup={"fwa_watershed_code": "wscode_ltree",
         # rename new table back to original name
         _, tablename = db.parse_table_name(table)
         db[temptable].rename(tablename)
+
+        # create indexes
+        #for idx in db[table].indexes
+
         # create ltree indexes
         for column in column_lookup:
             if column in db[table].columns:
@@ -98,7 +118,7 @@ def add_ltree(table, column_lookup={"fwa_watershed_code": "wscode_ltree",
                                            index_type=index_type)
 
 
-def get_events(self, table, pk, filters=None, param=None):
+def get_events(table, pk, filters=None, param=None, db=None):
     """
     Return blue line key event info from supplied event table
 
@@ -112,6 +132,8 @@ def get_events(self, table, pk, filters=None, param=None):
     param      - parameters to supply to the query
                  (replacing %s in the filters)
     """
+    if not db:
+        db = util.connect()
     sql = """SELECT {pk},
                 blue_line_key,
                 downstream_route_measure,
@@ -123,12 +145,13 @@ def get_events(self, table, pk, filters=None, param=None):
         sql = sql + "\nWHERE " + "\n AND ".join(filters)
     sql = sql + "\nORDER BY {pk}".format(pk=pk)
     if param:
-        return self.db.query(sql, param)
+        return db.query(sql, param)
     else:
-        return self.db.query(sql)
+        return db.query(sql)
 
-def create_events_from_points(self, point_table, point_id, out_table,
-                              threshold, match_col=None):
+
+def create_events_from_points(point_table, point_id, out_table,
+                              threshold, match_col=None, db=None):
     """
       Locate points in provided input table on stream network.
 
@@ -154,34 +177,35 @@ def create_events_from_points(self, point_table, point_id, out_table,
       NOTES
       - All inputs and outputs must be in the same database
     """
+    if not db:
+        db = util.connect()
     # check that match_col is present if specified
-    if match_col and match_col not in self.db[point_table].columns:
+    if match_col and match_col not in db[point_table].columns:
         raise ValueError('match column not in source table')
     # check that id is an integer field
-    if type(self.db[point_table].column_types[point_id]) not in (INTEGER,
+    if type(db[point_table].column_types[point_id]) not in (INTEGER,
                                                                  BIGINT):
         raise ValueError('source table pk must be integer/bigint')
     # grab id and fwa_watershed_code of all points
     if match_col:
-        pts = list(self.db[point_table].distinct(point_id,
+        pts = list(db[point_table].distinct(point_id,
                                                  match_col))
     else:
-        pts = list(self.db[point_table].distinct(point_id))
+        pts = list(db[point_table].distinct(point_id))
     # Find nearest neighbouring stream
     event_list = []
     start_time = datetime.datetime.utcnow()
     for n, pt in enumerate(pts):
         if match_col:
             pt = pt[point_id]
-        self.note_progress('create_events_from_points: ', n,
-                           len(pts), start_time)
+        #self.note_progress('create_events_from_points: ', n,len(pts), start_time)
         matched = False
         # get streams
-        sql = self.db.build_query(self.queries['streams_closest_to_point'],
+        sql = db.build_query(fwa.queries['streams_closest_to_point'],
                                   {"inputPointTable": point_table,
                                    "inputPointId": point_id})
         # get ws_code and distance to stream of nearby distinct streams
-        streams = self.db.query(sql, (pt, threshold))
+        streams = db.query(sql, (pt, threshold))
         if streams:
         # if the point's match field is the same as one of the stream's,
         # use only that stream
@@ -197,10 +221,10 @@ def create_events_from_points(self, point_table, point_id, out_table,
                 stream_code = stream["fwa_watershed_code"]
                 distance_to_stream = stream["distance_to_stream"]
                 # snap the point to the matching stream
-                sql = self.db.build_query(self.queries['locate_point_on_stream'],
+                sql = db.build_query(fwa.queries['locate_point_on_stream'],
                                           {"inputPointTable": point_table,
                                            "inputPointId": point_id})
-                row = self.db.query_one(sql, (pt, stream_code, threshold))
+                row = db.query_one(sql, (pt, stream_code, threshold))
                 # append row to list
                 if row["downstream_route_measure"]:
                     insert_row = dict(row)
@@ -211,7 +235,7 @@ def create_events_from_points(self, point_table, point_id, out_table,
                     insert_row["n_stream_match"] = n_stream + 1
                     event_list.append(insert_row)
     if event_list:
-        self.db[out_table].drop()
+        db[out_table].drop()
         sql = """CREATE TABLE {out_table}
                    (
                    {point_id} int,
@@ -228,48 +252,11 @@ def create_events_from_points(self, point_table, point_id, out_table,
                    )""".format(out_table=out_table,
                                point_id=point_id)
                   # --n_other_nearby_streams int
-        self.db.execute(sql)
-        self.db[out_table].insert_many(event_list)
+        db.execute(sql)
+        db[out_table].insert_many(event_list)
     else:
         return 'No input points within %sm of a stream.' % str(threshold)
 
-def add_fishhab(self, table, pk, fish_habitat_table):
-    """
-    Add field `fish_habitat` to provided event table,
-    Then populate by examining the fish habitat line events
-    Overwrites existing fish_habitat field if it already exists
-
-    Maybe speed up by doing a join rather than iterating through recs:
-        SELECT
-          e.id,
-          h.blue_line_key,
-          max(h.downstream_route_measure) as downstream_route_measure
-        FROM temp.nfc_events e
-        INNER JOIN fish_passage.fish_habitat h
-        ON e.blue_line_key = h.blue_line_key
-        AND e.downstream_route_measure >= h.downstream_route_measure
-        GROUP BY e.id, h.blue_line_key
-        ORDER BY e.id
-    """
-    # add fish habitat field, dropping if it already exists
-    self.db[table].drop_column("fish_habitat")
-    self.db[table].create_column("fish_habitat", sqlalchemy.Text)
-
-    # select all events
-    events = self.get_events(table, pk)
-    start_time = datetime.datetime.utcnow()
-    for n, event in enumerate(events, start=1):
-        self.note_progress('add_fish_habitat: ', n,
-                           len(events), start_time)
-        # Get the fish_habitat value for the crossing from the line in the
-        # fish habitat event table on which the crossing lies,
-        lookup = {"InputTable": table,
-                  "PrimaryKey": pk,
-                  "FishHabitatTable": fish_habitat_table}
-        sql = self.db.build_query(self.queries["add_habitat"], lookup)
-        self.db.execute(sql, (event["blue_line_key"],
-                              event["downstream_route_measure"],
-                              event[pk]))
 
 def create_geom_from_events(self,
                             in_table,
@@ -308,59 +295,3 @@ def create_geom_from_events(self,
                                       "inputTable": in_table})
     self.db.execute(query)
     return True
-
-def index_events_downstream(self, table, pk):
-    '''
-    Given a table with blueLineKey events, create a field which holds
-    id of next event downstream from a given event.
-
-     - overwrites downstream_event_id if column already exists
-     - events cannot be on 999-999999 streams
-     - required fields:
-         blue_line_key,
-         downstream_route_measure,
-         fwa_watershed_code,
-         local_watershed_code
-
-    table - input event table
-    pk    - name of unique identifier within event table, must be of
-                 type integer
-    '''
-    # add index field
-    dnstr_id = "downstream_event_id"
-    self.db[table].drop_column(dnstr_id)
-    self.db[table].create_column(table, INTEGER)
-    events = self.get_events(table, pk)
-    start_time = datetime.datetime.utcnow()
-    for n, event in enumerate(events, start=1):
-        self.note_progress('index_event_table_downstream', n, events.rowcount, start_time)
-        #downstreamSql = self.sql_downstream_below_blueLineKey(wsCode, localCode)
-        downstreamSql = self.sql_downstream_below_blueLineKey_non_recursive(event["fwa_watershed_code"],
-                                                                            event["local_watershed_code"])
-        # create subquery to inject into update statement
-        if downstreamSql:
-            downstreamSql = """UNION ALL
-                        SELECT %s, fwa_watershed_code, local_watershed_code, downstream_route_measure
-                        FROM %s WHERE %s
-                     ORDER BY fwa_watershed_code DESC, downstream_route_measure DESC
-                     """ % (event[pk],
-                            table,
-                            downstreamSql)
-        else:
-            downstreamSql = ""
-        # create update statement
-        updateSql = """UPDATE %s
-                        SET downstream_event_id =
-                            (SELECT %s
-                             FROM
-                             (SELECT %s, fwa_watershed_code, local_watershed_code, downstream_route_measure
-                                FROM %s
-                               WHERE blue_line_key = %s
-                                 AND downstream_route_measure <  (%s - .00001)
-                              %s) as foo
-                             LIMIT 1)
-                             WHERE %s = '%s'""" % (eventTable, eventId,
-                                                 eventId, eventTable,
-                                                 str(blueLineKey), str(measure),
-                                                 downstreamSql, eventId, str(idValue))
-        self.db.execute(updateSql)

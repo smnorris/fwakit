@@ -6,8 +6,11 @@ try:
     from urllib.parse import urlparse
 except ImportError:
      from urlparse import urlparse
+try:
+    from urllib.request import urlopen
+except ImportError:
+    from urllib2 import urlopen
 import tempfile
-import urllib2
 import zipfile
 import os
 import logging as lg
@@ -18,7 +21,7 @@ import unicodedata
 
 import requests
 
-import pgdb
+import pgdata
 
 from . import settings
 
@@ -227,7 +230,7 @@ def download_and_unzip(url, unzip_dir):
             fp.write(chunk)
     # ftp
     elif parsed_url.scheme == "ftp":
-        download = urllib2.urlopen(url)
+        download = urlopen(url)
         file_size_dl = 0
         block_sz = 8192
         while True:
@@ -263,15 +266,15 @@ def get_shortcuts():
 def connect(db_url=None):
     if not db_url:
         db_url = settings.db_url
-    return pgdb.connect(db_url)
+    return pgdata.connect(db_url)
 
 
 def load_queries():
-    """ Load sql queries to dict
+    """ Load queries from module /sql folder to dict
     """
     queries = {}
     for f in pkg_resources.resource_listdir(__name__, "sql"):
         key = os.path.splitext(f)[0]
         queries[key] = pkg_resources.resource_string(__name__,
-                                                     os.path.join("sql", f))
+                                                     os.path.join("sql", f)).decode('utf-8')
     return queries

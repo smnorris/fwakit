@@ -1,8 +1,8 @@
 global-exclude .DS_Store
 global-exclude *.pyc
 exclude MANIFEST.in
-exclude *.txt *.py
 recursive-include tests *.py
 include CHANGES.txt LICENSE.txt README.md
 include requirements.txt
-include fwakit/config.yml
+include fwakit/fwa_source_data.yml
+include fwakit/sql/*.sql

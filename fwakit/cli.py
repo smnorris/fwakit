@@ -9,6 +9,7 @@ import os
 
 import click
 
+import pgdata
 import fwakit as fwa
 from . import settings
 
@@ -36,6 +37,22 @@ def validate_format(ctx, param, value):
 @click.group()
 def cli():
     pass
+
+
+@cli.command()
+@click.option('--db_url', '-db', help='Database to load files to',
+              envvar='FWA_DB')
+def create_db(db_url):
+    """Create a fresh database, install extensions and create schema
+    """
+    pgdata.create_db(db_url)
+    db = pgdata.connect(db_url)
+
+    # create required extenstions/functions/schema if they don't exist
+    db.execute('CREATE EXTENSION IF NOT EXISTS postgis')
+    db.execute('CREATE EXTENSION IF NOT EXISTS lostgis')
+    db.execute('CREATE EXTENSION IF NOT EXISTS ltree')
+    db.execute('CREATE SCHEMA IF NOT EXISTS whse_basemapping')
 
 
 @cli.command()
@@ -68,7 +85,7 @@ def download(files, source_url, dl_path):
 @click.option('--dl_path', '-p', help='Local path to download files to',
               default=settings.dl_path)
 @click.option('--db_url', '-db', help='Database to load files to',
-              default=settings.db_url)
+              envvar='FWA_DB')
 @click.option('--wsg', '-g', help='List of group codes to load')
 def load(layers, skiplayers, dl_path, db_url, wsg):
     """Load FWA data to PostgreSQL
@@ -76,11 +93,10 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
     db = fwa.util.connect(db_url)
     # parse the input layers
     in_layers = parse_layers(layers, skiplayers)
-    # create required extenstions/functions/schema if they don't exist
-    db.execute('CREATE EXTENSION IF NOT EXISTS POSTGIS')
-    db.execute('CREATE EXTENSION IF NOT EXISTS LTREE')
-    db.execute('CREATE SCHEMA IF NOT EXISTS whse_basemapping')
-    db.execute(fwa.queries['functions'])
+
+    # create wsc parsing functions
+    db.execute(fwa.queries['fwa_wscode2ltree'])
+    db.execute(fwa.queries['fwa_trimwsc'])
 
     click.echo('Loading FWA source data to PostgreSQL database')
     # iterate through all data specified in config, loading only tables specified
@@ -135,7 +151,6 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
                         # drop the source group table
                         db['whse_basemapping.'+group.lower()].drop()
 
-
     # Clean and index the data
     for source_file in settings.sources_dict:
         for layer in settings.sources_dict[source_file]:
@@ -177,18 +192,31 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
                 # re-create geometry index
                 if 'geom' in db[table].columns:
                     db[table].create_index_geom()
-    # create lookups
-    # - simplified 20k-50k lookup
-    # - lut of streams with codes that cannot be used for up-downstream queries
-    if 'whse_basemapping.fwa_streams_20k_50k' in db.tables:
-        db.execute(fwa.queries['create_lut_50k_20k_wsc'])
+
+    # create additional functions, convenience tables, lookups
+    # (run queries with 'create_' prefix if required sources are present)
+
+    # create upstream/downstream functions and invalid code lookup
     if 'whse_basemapping.fwa_stream_networks_sp' in db.tables:
+        for func in fwa.queries:
+            if func[:4] == 'fwa_':
+                click.echo(func)
+                db.execute(fwa.queries[func])
         db.execute(fwa.queries['create_invalid_codes'])
+
     # create named streams table
     if ('whse_basemapping.fwa_stream_networks_sp' in db.tables and
             'whse_basemapping.fwa_lakes_poly' in db.tables and
             'whse_basemapping.fwa_manmade_waterbodies_poly' in db.tables):
         db.execute(fwa.queries['named_streams'])
+
+    # subdivide watershed group polys
+    if 'whse_basemapping.fwa_watershed_groups_poly' in db.tables:
+        db.execute(fwa.queries['create_fwa_watershed_groups_subdivided'])
+
+    # simplify the 20k-50k stream lookup
+    if 'whse_basemapping.fwa_streams_20k_50k' in db.tables:
+        db.execute(fwa.queries['create_lut_50k_20k_wsc'])
 
 
 @cli.command()

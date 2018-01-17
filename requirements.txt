@@ -1,6 +1,4 @@
-sqlalchemy
-requests
 click
-pyyaml
-pgdb
-        
+requests
+sqlalchemy
+pgdata

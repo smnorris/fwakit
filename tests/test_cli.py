@@ -1,16 +1,13 @@
 from __future__ import absolute_import
 import os
-try:
-    from urllib.parse import urlparse
-except ImportError:
-     from urlparse import urlparse
 
 from click.testing import CliRunner
 
 import fwakit as fwa
 from fwakit.cli import cli
+from fwakit import settings
 
-SOURCE_URL = 'http://www.hillcrestgeo.ca/outgoing/public/fwakit/'
+SOURCE_URL = 'https://www.hillcrestgeo.ca/outgoing/public/fwakit/'
 DB_URL = 'postgresql://postgres:postgres@localhost:5432/fwakit_test'
 DL_PATH = 'test_data'
 
@@ -20,6 +17,11 @@ GROUP = 'VICT'
 
 SIMPLE_FILE = 'FWA_BC.gdb.zip'
 SIMPLE_LAYER = 'fwa_lakes_poly'
+
+
+def setup():
+    runner = CliRunner()
+    runner.invoke(cli, ['create_db', '-db', DB_URL])
 
 
 def test_download():
@@ -51,3 +53,13 @@ def test_load_simple():
                                 '-p', DL_PATH,
                                 '-db', DB_URL])
     assert SIMPLE_LAYER in db.tables_in_schema('whse_basemapping')
+
+
+def test_load_groups():
+    runner = CliRunner()
+    db = fwa.util.connect(DB_URL)
+    runner.invoke(cli, ['load', '-l', 'fwa_watershed_groups_poly',
+                                '-p', DL_PATH,
+                                '-db', DB_URL])
+    assert 'fwa_watershed_groups_poly' in db.tables_in_schema('whse_basemapping')
+    assert 'fwa_watershed_groups_subdivided' in db.tables_in_schema('whse_basemapping')

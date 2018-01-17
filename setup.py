@@ -6,7 +6,7 @@ def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
 
-# Parse the version from the pgdb module.
+# Parse the version from the fwa module.
 with open('fwakit/__init__.py', 'r') as f:
     for line in f:
         if line.find("__version__") >= 0:
@@ -36,13 +36,9 @@ setup(name='fwakit',
       url='https://github.com/smnorris/fwakit',
       license='MIT',
       packages=find_packages(exclude=['ez_setup', 'examples', 'tests']),
-      dependency_links=['http://github.com/smnorris/pgdb/tarball/master#egg=pgdb-0.0.3'],
       include_package_data=True,
       zip_safe=False,
       install_requires=read('requirements.txt').splitlines(),
-      extras_require={
-          'test': ['pytest'],
-      },
       entry_points="""
       [console_scripts]
       fwakit=fwakit.cli:cli
