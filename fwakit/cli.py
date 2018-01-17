@@ -90,6 +90,9 @@ def download(files, source_url, dl_path):
 def load(layers, skiplayers, dl_path, db_url, wsg):
     """Load FWA data to PostgreSQL
     """
+    # make sure the db, extensions, schemas exist
+    create_db(db_url)
+
     db = fwa.util.connect(db_url)
     # parse the input layers
     in_layers = parse_layers(layers, skiplayers)

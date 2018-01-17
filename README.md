@@ -11,38 +11,69 @@ Python/PostgreSQL tools for working with British Columbia's [Freshwater Atlas](h
 `$ pip install fwakit`
 
 ## configuration
-First, create a PostGIS enabled PostgreSQL database. For convenience, create an environment variable `FWA_DB` and set it to the SQLAlchemy db url for your database:
+For convenience, create an environment variable `FWA_DB` and set it to the SQLAlchemy db url for your database:
 
 MacOS/Linux etc:
-`export FWA_URL=postgresql://postgres:postgres@localhost:5432/fwadb`
+`export FWA_DB_URL=postgresql://postgres:postgres@localhost:5432/fwadb`
 
 Windows:
-`SET FWA_URL="postgresql://postgres:postgres@localhost:5432/fwadb"`
+`SET FWA_DB_URL="postgresql://postgres:postgres@localhost:5432/fwadb"`
 
 For more configuration, see `settings.py`. 
 
-## usage
+## setup
 
 Get FWA data from GeoBC:  
+
 `$ fwakit download`
 
-Note that this may not work if you are behind a network proxy. Download and unzip the files of interest manually from [ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public](Data BC's ftp server).
+Note that the download may not work if you are behind a network proxy. Download and unzip the files of interest manually from [ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public](Data BC's ftp server).
 
 Load all FWA data to postgres, repair, index, and optimize:  
+
 `$ fwakit load`
 
-Use fwakit in Python:
+## usage
+
+Use `fwakit` python module:
+
 ```
 import fwakit as fwa
-from fwakit import stream
-from fwakit import lake
 
-mystream = stream(blue_line_key=123456)
-mylake = lake(waterbody_polygon_id=123456)
-points = 'my_points_table'
+wsg = fwa.list_groups()
 
-fwa.dostuff(stream, points)
->>['stream','point','stuff1']
-fwa.dostuff(lake, points)
->>['lake','point','stuff1','stuffa']
+fwa.create_events_from_points('point_table', 'point_id', 'event_table', 10)
+
 ```
+
+Use installed `fwa` prefixed functions directly in postgresql:
+
+```
+fwakit_test=# SELECT fwa_upstreamlength(354136754, 1200) / 1000 as downstream_km, fwa_downstreamlength(354136754, 1200) / 1000 as upstream_km;
+  downstream_km  |   upstream_km
+-----------------+------------------
+ 5.1829073255008 | 9.48098793830257
+(1 row)
+```
+
+Use `fwakit` command line interface for common tasks:  
+
+```
+$ fwakit --help
+
+Usage: fwakit [OPTIONS] COMMAND [ARGS]...
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  create_db  Create a fresh database, install extensions...
+  download   Download FWA gdb archives from GeoBC ftp
+  dump       Dump sample data to file
+  load       Load FWA data to PostgreSQL
+```
+
+Use data (created on load) for mapping and analysis, such as:
+
+- `whse_basemapping.fwa_named_streams` - named streams, simplified and merged
+- `whse_basemapping.fwa_watershed_groups_subdivided` - subdivided watershed groups, for much faster point in polygon queries
