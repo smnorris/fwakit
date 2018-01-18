@@ -8,6 +8,7 @@ Python/PostgreSQL tools for working with British Columbia's [Freshwater Atlas](h
 - GDAL (for loading data to PostgreSQL, tested with 2.2.3)
 
 ## Installation
+
 `$ pip install fwakit`
 
 ## Configuration
@@ -29,9 +30,12 @@ Get FWA data from GeoBC:
 
 Note that the download may not work if you are behind a network proxy. Download and unzip the files of interest manually from [ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public](Data BC's ftp server).
 
-Load all FWA data to postgres, repair, index, and optimize:  
+Create db, load FWA data, repair, index, and optimize:  
 
-`$ fwakit load`
+```
+$ fwakit create_db
+$ fwakit load
+```
 
 ## Usage
 
