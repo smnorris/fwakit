@@ -1,0 +1,9 @@
+Changes
+=======
+
+All issue numbers are relative to https://github.com/smnorris/fwakit/issues.
+
+
+0.0.1a (2018-01-)
+------------------
+Python/PostgreSQL tools for working with the BC Freshwater Atlas

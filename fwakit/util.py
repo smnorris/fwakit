@@ -10,6 +10,7 @@ try:
     from urllib.request import urlopen
 except ImportError:
     from urllib2 import urlopen
+
 import tempfile
 import zipfile
 import os
@@ -220,14 +221,15 @@ def download_and_unzip(url, unzip_dir):
                                      delete=False)
     parsed_url = urlparse(url)
     # http
-    if parsed_url.scheme == "http" or parsed_url.scheme == "https":
-        res = requests.get(url, stream=True, verify=False)
+    if parsed_url.scheme == "http" or parsed_url.scheme == 'https':
+        res = requests.get(url, stream=True)
 
         if not res.ok:
             raise IOError
 
         for chunk in res.iter_content(CHUNK_SIZE):
             fp.write(chunk)
+
     # ftp
     elif parsed_url.scheme == "ftp":
         download = urlopen(url)

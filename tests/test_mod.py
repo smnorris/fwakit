@@ -2,6 +2,8 @@ from __future__ import absolute_import
 
 import fwakit as fwa
 
+DB_URL = 'postgresql://postgres:postgres@localhost:5432/fwakit_test'
+
 
 def test_trim_ws_code():
     assert '920' == fwa.trim_ws_code('920-000000')
@@ -13,7 +15,9 @@ def test_queries():
 
 
 def test_list_groups():
-    groups = fwa.list_groups(table='whse_basemapping.fwa_stream_networks_sp')
+    db = fwa.util.connect(DB_URL)
+    groups = fwa.list_groups(table='whse_basemapping.fwa_stream_networks_sp',
+                             db=db)
     assert groups[0] == 'VICT'
     assert len(groups) == 1
 
@@ -24,24 +28,10 @@ def test_get_local_code():
 
 
 def test_add_ltree():
-    table = 'whse_basemapping.fwa_stream_networks_sp'
-    db = fwa.util.connect()
-    if 'wscode_ltree' in db[table].columns:
-        db.execute("ALTER TABLE {t} DROP COLUMN wscode_ltree".format(t=table))
-    if 'localcode_ltree' in db[table].columns:
-        db.execute("ALTER TABLE {t} DROP COLUMN localcode_ltree".format(t=table))
-    fwa.add_ltree('whse_basemapping.fwa_stream_networks_sp')
-    assert 'wscode_ltree' in db['whse_basemapping.fwa_stream_networks_sp'].columns
-    assert 'localcode_ltree' in db['whse_basemapping.fwa_stream_networks_sp'].columns
-
-
-# this works
-#def test_st_distance():
-#    r = FWA.db.query("""SELECT ST_Distance(ST_GeomFromText('POINT(0 0)'),
-#                                           ST_GeomFromText('POINT(0 10)'))""")
-
-# but this doesn't, psycopg2 wants ST_Distance inputs cast explicitly
-# but... the function works fine outside of testing.....wtf
-#def test_create_events_from_matched_points():
-#    FWA.create_events_from_matched_points("temp.test_points", "id",
-#                                          "temp.test_events", 250)
+    test_table = 'whse_basemapping.fwa_stream_networks_sp'
+    test_column = 'wscode_ltree'
+    db = fwa.util.connect(DB_URL)
+    if test_column in db[test_table].columns:
+        db[test_table].drop_column(test_column)
+    fwa.add_ltree(test_table, {'fwa_watershed_code': test_column}, db=db)
+    assert test_column in db[test_table].columns

@@ -5,9 +5,9 @@ from click.testing import CliRunner
 
 import fwakit as fwa
 from fwakit.cli import cli
-from fwakit import settings
 
-SOURCE_URL = 'https://www.hillcrestgeo.ca/outgoing/public/fwakit/'
+
+SOURCE_URL = 'https://www.hillcrestgeo.ca/outgoing/fwakit/'
 DB_URL = 'postgresql://postgres:postgres@localhost:5432/fwakit_test'
 DL_PATH = 'test_data'
 

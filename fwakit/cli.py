@@ -90,9 +90,6 @@ def download(files, source_url, dl_path):
 def load(layers, skiplayers, dl_path, db_url, wsg):
     """Load FWA data to PostgreSQL
     """
-    # make sure the db, extensions, schemas exist
-    create_db(db_url)
-
     db = fwa.util.connect(db_url)
     # parse the input layers
     in_layers = parse_layers(layers, skiplayers)
@@ -201,11 +198,9 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
 
     # create upstream/downstream functions and invalid code lookup
     if 'whse_basemapping.fwa_stream_networks_sp' in db.tables:
-        for func in fwa.queries:
-            if func[:4] == 'fwa_':
-                click.echo(func)
-                db.execute(fwa.queries[func])
         db.execute(fwa.queries['create_invalid_codes'])
+        for f in ['fwa_downstreamlength', 'fwa_upstreamlength']:
+            db.execute(fwa.queries[f])
 
     # create named streams table
     if ('whse_basemapping.fwa_stream_networks_sp' in db.tables and

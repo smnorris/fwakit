@@ -32,7 +32,7 @@ class QueryDict(object):
         else:
             raise ValueError("Invalid query name: %r" % query_name)
 
-#queries = QueryDict()
+queries = QueryDict()
 
 
 def list_groups(table=None, db=None):
@@ -106,9 +106,6 @@ def add_ltree(table, column_lookup={"fwa_watershed_code": "wscode_ltree",
         # rename new table back to original name
         _, tablename = db.parse_table_name(table)
         db[temptable].rename(tablename)
-
-        # create indexes
-        #for idx in db[table].indexes
 
         # create ltree indexes
         for column in column_lookup:
