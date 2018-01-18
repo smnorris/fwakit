@@ -2,16 +2,16 @@
 
 Python/PostgreSQL tools for working with British Columbia's [Freshwater Atlas](https://www2.gov.bc.ca/gov/content/data/geographic-data-services/topographic-data/freshwater)
 
-## requirements
+## Requirements
 - Python 2.7+ (tested with 2.7.14, 3.6.4)
 - PostgreSQL/PostGIS (tested with 10.1/2.4.2)
 - GDAL (for loading data to PostgreSQL, tested with 2.2.3)
 
-## installation
+## Installation
 `$ pip install fwakit`
 
-## configuration
-For convenience, create an environment variable `FWA_DB` and set it to the SQLAlchemy db url for your database:
+## Configuration
+Create an environment variable `FWA_DB` and set it to the SQLAlchemy db url for your database. For example:
 
 MacOS/Linux etc:
 `export FWA_DB_URL=postgresql://postgres:postgres@localhost:5432/fwadb`
@@ -21,7 +21,7 @@ Windows:
 
 For more configuration, see `settings.py`. 
 
-## setup
+## Setup
 
 Get FWA data from GeoBC:  
 
@@ -33,9 +33,9 @@ Load all FWA data to postgres, repair, index, and optimize:
 
 `$ fwakit load`
 
-## usage
+## Usage
 
-Use `fwakit` python module:
+##### Use the Python module:
 
 ```
 import fwakit as fwa
@@ -46,7 +46,7 @@ fwa.create_events_from_points('point_table', 'point_id', 'event_table', 10)
 
 ```
 
-Use installed `fwa` prefixed functions directly in postgresql:
+##### Use installed `fwa` prefixed functions directly in postgresql:
 
 ```
 fwakit_test=# SELECT fwa_upstreamlength(354136754, 1200) / 1000 as downstream_km, fwa_downstreamlength(354136754, 1200) / 1000 as upstream_km;
@@ -56,7 +56,7 @@ fwakit_test=# SELECT fwa_upstreamlength(354136754, 1200) / 1000 as downstream_km
 (1 row)
 ```
 
-Use `fwakit` command line interface for common tasks:  
+##### Use `fwakit` command line interface for common tasks:  
 
 ```
 $ fwakit --help
@@ -73,7 +73,7 @@ Commands:
   load       Load FWA data to PostgreSQL
 ```
 
-Use data (created on load) for mapping and analysis, such as:
+##### Use data (created on load) for mapping and analysis, such as:
 
 - `whse_basemapping.fwa_named_streams` - named streams, simplified and merged
 - `whse_basemapping.fwa_watershed_groups_subdivided` - subdivided watershed groups, for much faster point in polygon queries
