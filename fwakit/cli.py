@@ -95,8 +95,8 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
     in_layers = parse_layers(layers, skiplayers)
 
     # create wsc parsing functions
-    db.execute(fwa.queries['fwa_wscode2ltree'])
     db.execute(fwa.queries['fwa_trimwsc'])
+    db.execute(fwa.queries['fwa_wsc2ltree'])
 
     click.echo('Loading FWA source data to PostgreSQL database')
     # iterate through all data specified in config, loading only tables specified

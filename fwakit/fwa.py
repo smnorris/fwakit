@@ -73,27 +73,21 @@ def add_ltree(table, column_lookup={"fwa_watershed_code": "wscode_ltree",
 
     - making a copy of the table is faster than adding columns and updating,
       but any existing indexes/constraints will have to be regenerated
-    - SQL is generated dynamically (rather than living in /sql) to handle
-      tables where local_watershed_code does not exist.
     """
     if not db:
         db = util.connect()
     # only add columns if not present
     new_columns = [c for c in column_lookup.values() if c not in db[table].columns]
     if new_columns:
-         # create new table
+        # create new table
         temptable = 'whse_basemapping.temp_ltree_copy'
         db[temptable].drop()
         ltree_list = []
         for column in column_lookup:
             if column in db[table].columns and column_lookup[column] in new_columns:
                 ltree_list.append(
-                    """CASE WHEN POSITION('-' IN fwa_trimwsc({incolumn})) > 0
-                              THEN text2ltree(REPLACE(fwa_trimwsc({incolumn}), '-', '.'))
-                            WHEN {incolumn} IS NULL THEN NULL
-                            ELSE text2ltree(fwa_trimwsc({incolumn}))
-                       END as {outcolumn}""".format(incolumn=column,
-                                                    outcolumn=column_lookup[column]))
+                    "fwa_wsc2ltree({incolumn}) as {outcolumn}"
+                    .format(incolumn=column, outcolumn=column_lookup[column]))
         ltree_sql = ", ".join(ltree_list)
         sql = """CREATE UNLOGGED TABLE {temptable} AS
                  SELECT *, {ltree_sql}
