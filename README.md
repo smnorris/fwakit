@@ -17,10 +17,10 @@ Python/PostgreSQL tools for working with British Columbia's [Freshwater Atlas](h
 Create an environment variable `FWA_DB` and set it to the SQLAlchemy db url for your database. For example:
 
 MacOS/Linux etc:
-`export FWA_DB_URL=postgresql://postgres:postgres@localhost:5432/fwadb`
+`export FWA_DB=postgresql://postgres:postgres@localhost:5432/fwadb`
 
 Windows:
-`SET FWA_DB_URL="postgresql://postgres:postgres@localhost:5432/fwadb"`
+`SET FWA_DB="postgresql://postgres:postgres@localhost:5432/fwadb"`
 
 For more configuration, see `settings.py`. 
 
