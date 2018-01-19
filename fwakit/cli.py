@@ -206,7 +206,7 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
     if ('whse_basemapping.fwa_stream_networks_sp' in db.tables and
             'whse_basemapping.fwa_lakes_poly' in db.tables and
             'whse_basemapping.fwa_manmade_waterbodies_poly' in db.tables):
-        db.execute(fwa.queries['named_streams'])
+        db.execute(fwa.queries['create_fwa_named_streams'])
 
     # subdivide watershed group polys
     if 'whse_basemapping.fwa_watershed_groups_poly' in db.tables:
