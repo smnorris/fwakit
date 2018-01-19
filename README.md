@@ -39,7 +39,7 @@ $ fwakit load
 
 ## Usage
 
-##### Use the Python module:
+#### Use the Python module:
 
 ```
 import fwakit as fwa
@@ -50,7 +50,7 @@ fwa.create_events_from_points('point_table', 'point_id', 'event_table', 10)
 
 ```
 
-##### Use installed `fwa` prefixed functions directly in postgresql:
+#### Use installed `fwa` prefixed functions directly in postgresql:
 
 ```
 fwakit_test=# SELECT fwa_upstreamlength(354136754, 1200) / 1000 as downstream_km, fwa_downstreamlength(354136754, 1200) / 1000 as upstream_km;
@@ -60,7 +60,7 @@ fwakit_test=# SELECT fwa_upstreamlength(354136754, 1200) / 1000 as downstream_km
 (1 row)
 ```
 
-##### Use `fwakit` command line interface for common tasks:  
+#### Use `fwakit` command line interface for common tasks:  
 
 ```
 $ fwakit --help
@@ -77,7 +77,7 @@ Commands:
   load       Load FWA data to PostgreSQL
 ```
 
-##### Use data (created on load) for mapping and analysis, such as:
+#### Use data (created on load) for mapping and analysis, such as:
 
 - `whse_basemapping.fwa_named_streams` - named streams, simplified and merged
 - `whse_basemapping.fwa_watershed_groups_subdivided` - subdivided watershed groups, for much faster point in polygon queries
