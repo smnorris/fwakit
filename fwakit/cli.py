@@ -97,6 +97,16 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
     db.execute(fwa.queries['fwa_wsc2ltree'])
 
     click.echo('Loading FWA source data to PostgreSQL database')
+    # load watershed groups first, required for everything else
+    source_file = 'FWA_BC.gdb.zip'
+    source_gdb = os.path.join(dl_path, os.path.splitext(source_file)[0])
+    table = 'fwa_watershed_groups_poly'
+    click.echo('Loading '+table)
+    db.ogr2pg(source_gdb,
+              in_layer=table.upper(),
+              out_layer=table,
+              schema='whse_basemapping',
+              dim=2)
     # iterate through all data specified in config, loading only tables specified
     for source_file in settings.sources_dict:
         source_gdb = os.path.join(dl_path,
