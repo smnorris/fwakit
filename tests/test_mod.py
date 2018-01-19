@@ -1,8 +1,10 @@
 from __future__ import absolute_import
+import os
 
 import fwakit as fwa
 
-DB_URL = 'postgresql://postgres:postgres@localhost:5432/fwakit'
+
+DB_URL = os.environ['FWA_DB_TEST']
 
 
 def test_trim_ws_code():
@@ -23,8 +25,9 @@ def test_list_groups():
 
 
 def test_get_local_code():
-    assert (fwa.trim_ws_code(fwa.get_local_code(354155107, 3400)) ==
-            '920-076175-303123')
+    db = fwa.util.connect(DB_URL)
+    assert (fwa.trim_ws_code(
+            fwa.get_local_code(354155107, 3400, db=db)) == '920-076175-303123')
 
 
 def test_add_ltree():

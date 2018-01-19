@@ -2,16 +2,12 @@
 # modify by passing values to utils.config()
 
 import logging as lg
-import os
 
 # where to download FWA source data from
 source_url = r'ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public/'
 
 # where to download FWA source data to
 dl_path = 'source_data'
-
-# db connection string
-db_url = os.environ['FWA_DB']
 
 # logging info
 log_level = lg.INFO

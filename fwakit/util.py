@@ -31,7 +31,6 @@ CHUNK_SIZE = 1024
 
 def config(source_url=settings.source_url,
            dl_path=settings.dl_path,
-           db_url=settings.db_url,
            sources_dict=settings.sources_dict,
            log_file=settings.log_file,
            log_console=settings.log_console,
@@ -66,7 +65,6 @@ def config(source_url=settings.source_url,
     # set each global variable to the passed-in parameter value
     settings.source_url = source_url
     settings.dl_path = dl_path
-    settings.db_url = db_url
     settings.sources_dict = sources_dict
     settings.log_console = log_console
     settings.log_file = log_file
@@ -267,7 +265,7 @@ def get_shortcuts():
 
 def connect(db_url=None):
     if not db_url:
-        db_url = settings.db_url
+        db_url = os.environ['FWA_DB']
     return pgdata.connect(db_url)
 
 
