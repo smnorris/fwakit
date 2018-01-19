@@ -14,6 +14,8 @@ import fwakit as fwa
 from . import settings
 
 
+
+
 def parse_layers(layers, skiplayers):
     if not layers:
         in_layers = fwa.tables
@@ -158,7 +160,7 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
                 click.echo(fwa.tables[layer]+': cleaning')
                 # drop ogr and esri columns
                 table = fwa.tables[layer]
-                for column in ['ogc_fid', 'geometry_area', 'geometry_length']:
+                for column in settings.drop_columns:
                     if column in db[table].columns:
                         db[table].drop_column(column)
                 # ensure _id primary/foreign keys are int - ogr maps them to floats

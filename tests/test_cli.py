@@ -8,7 +8,7 @@ from fwakit.cli import cli
 
 
 SOURCE_URL = 'https://www.hillcrestgeo.ca/outgoing/fwakit/'
-DB_URL = 'postgresql://postgres:postgres@localhost:5432/fwakit_test'
+DB_URL = 'postgresql://postgres:postgres@localhost:5432/fwakit'
 DL_PATH = 'test_data'
 
 GROUPED_FILE = 'FWA_STREAM_NETWORKS_SP.gdb.zip'

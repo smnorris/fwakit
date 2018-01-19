@@ -2,7 +2,7 @@ from __future__ import absolute_import
 
 import fwakit as fwa
 
-DB_URL = 'postgresql://postgres:postgres@localhost:5432/fwakit_test'
+DB_URL = 'postgresql://postgres:postgres@localhost:5432/fwakit'
 
 
 def test_trim_ws_code():

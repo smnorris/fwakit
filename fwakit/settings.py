@@ -20,6 +20,9 @@ log_console = 'False'
 log_name = 'fwakit'
 log_filename = 'fwakit'
 
+# columns to drop from source data
+drop_columns = ['ogc_fid', 'objectid', 'geometry_area', 'geometry_length']
+
 # source data definition file, a dict holding:
 # - input .gdb.zip files
 # - table name
