@@ -19,7 +19,7 @@ SIMPLE_FILE = 'FWA_BC.gdb.zip'
 SIMPLE_LAYER = 'fwa_lakes_poly'
 
 
-def setup():
+def test_setUp():
     runner = CliRunner()
     runner.invoke(cli, ['create_db', '-db', DB_URL])
 

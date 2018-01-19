@@ -35,3 +35,8 @@ def test_add_ltree():
         db[test_table].drop_column(test_column)
     fwa.add_ltree(test_table, {'fwa_watershed_code': test_column}, db=db)
     assert test_column in db[test_table].columns
+
+
+def test_tearDown():
+    db = fwa.util.connect(DB_URL)
+    db.drop_schema('whse_basemapping', cascade=True)

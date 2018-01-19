@@ -28,7 +28,7 @@ Get FWA data from GeoBC:
 
 `$ fwakit download`
 
-Note that the download may not work if you are behind a network proxy. Download and unzip the files of interest manually from [ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public](Data BC's ftp server).
+Note that the download may not work if you are behind a network proxy. Download and unzip the files of interest manually from [DataBC's ftp server](ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public).
 
 Create db, load FWA data, repair, index, and optimize:  
 
