@@ -1,0 +1,15 @@
+language: python
+python:
+  - "2.7"
+  - "3.6"
+install:
+  - "pip install coveralls"
+  - "pip install -e .[test]"
+env:
+  - FWA_DB=postgresql://postgres:postgres@localhost:5432/fwakit
+script:
+  - py.test
+  - coverage run --source=fwakit -m py.test
+after_success:
+  - coveralls
+sudo: false

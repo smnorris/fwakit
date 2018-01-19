@@ -30,7 +30,7 @@ setup(name='fwakit',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6'
       ],
-      keywords='',
+      keywords='gis FWA "Freshwater Atlas" BC "British Columbia" streams watersheds',
       author=u"Simon Norris",
       author_email='snorris@hillcrestgeo.ca',
       url='https://github.com/smnorris/fwakit',
