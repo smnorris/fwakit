@@ -6,6 +6,7 @@ cache:
     - ~/.cache/pip
 env:
   global:
+    - FWA_DB=postgresql://postgres:postgres@localhost:5432/fwakit
     - PIP_WHEEL_DIR=$HOME/.cache/pip/wheels
     - PIP_FIND_LINKS=file://$HOME/.cache/pip/wheels
     - GDALINST=$HOME/gdalinstall
