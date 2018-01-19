@@ -2,6 +2,8 @@
 
 Python/PostgreSQL tools for working with British Columbia's [Freshwater Atlas](https://www2.gov.bc.ca/gov/content/data/geographic-data-services/topographic-data/freshwater)
 
+[![Build Status](https://travis-ci.org/smnorris/fwakit.svg?branch=master)](https://travis-ci.org/smnorris/fwakit) [![Coverage Status](https://coveralls.io/repos/github/smnorris/fwakit/badge.svg?branch=master)](https://coveralls.io/github/smnorris/fwakit?branch=master)
+
 ## Requirements
 - Python 2.7+ (tested with 2.7.14, 3.6.4)
 - PostgreSQL/PostGIS (tested with 10.1/2.4.2)
@@ -81,3 +83,8 @@ Commands:
 
 - `whse_basemapping.fwa_named_streams` - named streams, simplified and merged
 - `whse_basemapping.fwa_watershed_groups_subdivided` - subdivided watershed groups, for much faster point in polygon queries
+
+
+## Credits
+- inspiration and code taken from [fiona](https://github.com/Toblerity/Fiona) and [osmnx](https://github.com/gboeing/osmnx)
+- many thanks to GeoBC and the Ministry of Environment for building, maintaining, and publishing the [Freshwater Atlas](https://www2.gov.bc.ca/gov/content/data/geographic-data-services/topographic-data/freshwater)

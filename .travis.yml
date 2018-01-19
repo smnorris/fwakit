@@ -1,15 +1,59 @@
 language: python
+sudo: false
+cache:
+  directories:
+    - $GDALINST
+    - ~/.cache/pip
+env:
+  global:
+    - PIP_WHEEL_DIR=$HOME/.cache/pip/wheels
+    - PIP_FIND_LINKS=file://$HOME/.cache/pip/wheels
+    - GDALINST=$HOME/gdalinstall
+    - GDALBUILD=$HOME/gdalbuild
+  matrix:
+    - GDALVERSION="2.2.3"
+
+addons:
+  postgresql: 9.6
+  apt:
+    packages:
+    - postgresql-9.6-postgis-2.3
+    - gdal-bin
+    - libproj-dev
+    - libgdal-dev
+
 python:
   - "2.7"
   - "3.6"
+
+before_install:
+  - pip install -U pip
+  - pip install wheel coveralls>=1.1 --upgrade
+  - pip install setuptools==36.0.1
+  - pip install wheel
+  - . ./scripts/travis_gdal_install.sh
+  - export PATH=$GDALINST/gdal-$GDALVERSION/bin:$PATH
+  - export LD_LIBRARY_PATH=$GDALINST/gdal-$GDALVERSION/lib:$LD_LIBRARY_PATH
+  - export GDAL_DATA=$GDALINST/gdal-$GDALVERSION/share/gdal
+  - export PROJ_LIB=/usr/share/proj
+  - gdal-config --version
+
 install:
-  - "pip install coveralls"
-  - "pip install -e .[test]"
-env:
-  - FWA_DB=postgresql://postgres:postgres@localhost:5432/fwakit
+  - pip install -r requirements.txt
+  - if [ "$GDALVERSION" = "trunk" ]; then echo "Using gdal trunk"; elif [ $(gdal-config --version) == "$GDALVERSION" ]; then echo "Using gdal $GDALVERSION"; else echo "NOT using gdal $GDALVERSION as expected; aborting"; exit 1; fi
+  - pip install --upgrade --force-reinstall --global-option=build_ext --global-option='-I$GDALINST/gdal-$GDALVERSION/include' --global-option='-L$GDALINST/gdal-$GDALVERSION/lib' --global-option='-R$GDALINST/gdal-$GDALVERSION/lib' -e .
+  - pip install -e .[test]
+  - gdal-config --version
+
+services:
+ - postgresql
+
+before_script:
+ - psql --version
+
 script:
-  - py.test
-  - coverage run --source=fwakit -m py.test
+ - py.test
+ - coverage run --source=pgdata -m py.test
+
 after_success:
-  - coveralls
-sudo: false
+ - coveralls
