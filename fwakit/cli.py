@@ -14,8 +14,6 @@ import fwakit as fwa
 from . import settings
 
 
-
-
 def parse_layers(layers, skiplayers):
     if not layers:
         in_layers = fwa.tables

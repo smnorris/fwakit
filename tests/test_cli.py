@@ -22,6 +22,8 @@ SIMPLE_LAYER = 'fwa_lakes_poly'
 def test_setUp():
     runner = CliRunner()
     runner.invoke(cli, ['create_db', '-db', DB_URL])
+    db = fwa.util.connect(DB_URL)
+    assert 'whse_basemapping' in db.schemas
 
 
 def test_download():
