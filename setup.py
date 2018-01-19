@@ -39,6 +39,8 @@ setup(name='fwakit',
       include_package_data=True,
       zip_safe=False,
       install_requires=read('requirements.txt').splitlines(),
+      extras_require={
+        'test': ['pytest', 'coverage']},
       entry_points="""
       [console_scripts]
       fwakit=fwakit.cli:cli
