@@ -45,10 +45,8 @@ def cli():
 def create_db(db_url):
     """Create a fresh database, install extensions and create schema
     """
-    #pgdata.create_db(db_url)
+    pgdata.create_db(db_url)
     db = pgdata.connect(db_url)
-
-    # create required extenstions/functions/schema if they don't exist
     db.execute('CREATE EXTENSION IF NOT EXISTS postgis')
     db.execute('CREATE EXTENSION IF NOT EXISTS lostgis')
     db.execute('CREATE EXTENSION IF NOT EXISTS ltree')

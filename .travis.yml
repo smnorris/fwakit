@@ -51,6 +51,7 @@ services:
 
 before_script:
  - psql --version
+ - psql -U postgres -c 'SELECT postgis_full_version();'
  - psql -U postgres -c 'create database fwakit;'
  - psql -U postgres -d fwakit -c "CREATE EXTENSION postgis;"
  - psql -U postgres -d fwakit -c "CREATE EXTENSION ltree;"
