@@ -77,8 +77,6 @@ def download(files, source_url, dl_path):
 
 
 @cli.command()
-@click.option('--files', '-f', help='List of files to process',
-              default=settings.source_files)
 @click.option('--layers', '-l', help='Comma separated list of tables to load')
 @click.option('--skiplayers', '-sl',
               help='Comma separated list of tables to skip')
@@ -87,7 +85,7 @@ def download(files, source_url, dl_path):
 @click.option('--db_url', '-db', help='Database to load files to',
               envvar='FWA_DB')
 @click.option('--wsg', '-g', help='List of group codes to load')
-def load(files, layers, skiplayers, dl_path, db_url, wsg):
+def load(layers, skiplayers, dl_path, db_url, wsg):
     """Load FWA data to PostgreSQL
     """
     db = fwa.util.connect(db_url)
@@ -174,10 +172,10 @@ def load(files, layers, skiplayers, dl_path, db_url, wsg):
                                    f=layer['source_file']))
     # Clean and index the data
     for layer in settings.source_tables:
-        if layer['table'] in in_layers:
+        table = fwa.tables[layer['table']]
+        if layer['table'] in in_layers and table in db.tables:
             click.echo(layer['table']+': cleaning')
             # drop ogr and esri columns
-            table = fwa.tables[layer['table']]
             for column in settings.drop_columns:
                 if column in db[table].columns:
                     db[table].drop_column(column)
