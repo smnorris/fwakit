@@ -77,6 +77,8 @@ def download(files, source_url, dl_path):
 
 
 @cli.command()
+@click.option('--files', '-f', help='List of files to process',
+              default=settings.source_files)
 @click.option('--layers', '-l', help='Comma separated list of tables to load')
 @click.option('--skiplayers', '-sl',
               help='Comma separated list of tables to skip')
@@ -85,7 +87,7 @@ def download(files, source_url, dl_path):
 @click.option('--db_url', '-db', help='Database to load files to',
               envvar='FWA_DB')
 @click.option('--wsg', '-g', help='List of group codes to load')
-def load(layers, skiplayers, dl_path, db_url, wsg):
+def load(files, layers, skiplayers, dl_path, db_url, wsg):
     """Load FWA data to PostgreSQL
     """
     db = fwa.util.connect(db_url)
@@ -99,71 +101,77 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
     click.echo('Loading FWA source data to PostgreSQL database')
 
     # load watershed groups first, it is required for processing subsequent data
-    layer = [t for t in settings.source_tables if t['table'] == 'fwa_watershed_groups_poly'][0]
-    click.echo('Loading '+layer['table'])
-    gdb = os.path.join(dl_path, os.path.splitext(layer['source_file'])[0])
     if 'whse_basemapping.fwa_watershed_groups_poly' not in db.tables:
+        layer = [t for t in settings.source_tables if t['table'] == 'fwa_watershed_groups_poly'][0]
+        click.echo('Loading '+layer['table'])
+        gdb = os.path.join(dl_path, os.path.splitext(layer['source_file'])[0])
+        if not os.path.exists(gdb):
+            raise IOError(gdb+' does not exist, download it first')
         db.ogr2pg(gdb,
                   in_layer=layer['table'].upper(),
                   out_layer=layer['table'],
                   schema='whse_basemapping',
                   dim=2)
 
-    # iterate the rest of the data specified in config (and command option)
+    # iterate through the rest of the data specified in config (and command option)
     for layer in settings.source_tables:
         table = fwa.tables[layer['table']]
         if layer['table'] in in_layers:
             gdb = os.path.join(dl_path, os.path.splitext(layer['source_file'])[0])
-            # load data that is not split up by watershed group
-            if not layer['grouped']:
-                click.echo('Loading %s' % layer['table'])
-                # don't overwrite these
-                if table not in db.tables:
-                    # only load the group of interest if specified
-                    if not wsg:
-                        db.ogr2pg(gdb,
-                                  in_layer=layer['table'].upper(),
-                                  out_layer=layer['table'],
-                                  schema='whse_basemapping',
-                                  dim=3)
-                    else:
-                        db.ogr2pg(gdb,
-                                  in_layer=layer['table'].upper(),
-                                  out_layer=layer['table'],
-                                  schema='whse_basemapping',
-                                  sql='watershed_group_code IN ({g})'.format(g=wsg),
-                                  dim=3)
-            # load data that *is* split up by watershed group
-            else:
-                click.echo('Loading %s by watershed group' % layer['table'])
-                # overwrite if the table exists
-                db[table].drop()
-                if wsg:
-                    groups = wsg.split(',')
+            if os.path.exists(gdb):
+                # load data that is not split up by watershed group
+                if not layer['grouped']:
+                    click.echo('Loading %s' % layer['table'])
+                    # don't overwrite these
+                    if table not in db.tables:
+                        # only load the group of interest if specified
+                        if not wsg:
+                            db.ogr2pg(gdb,
+                                      in_layer=layer['table'].upper(),
+                                      out_layer=layer['table'],
+                                      schema='whse_basemapping',
+                                      dim=3)
+                        else:
+                            db.ogr2pg(gdb,
+                                      in_layer=layer['table'].upper(),
+                                      out_layer=layer['table'],
+                                      schema='whse_basemapping',
+                                      sql='watershed_group_code IN ({g})'.format(g=wsg),
+                                      dim=3)
+                # load data that *is* split up by watershed group
                 else:
-                    groups = fwa.list_groups(db=db)
-                for i, group in enumerate(sorted(groups)):
-                    click.echo(group)
-                    db.ogr2pg(gdb,
-                              in_layer=group,
-                              out_layer=layer['table']+'_'+group.lower(),
-                              schema='whse_basemapping',
-                              dim=3)
-                    # combine the groups into a single table
-                    if i == 0:
-                        sql = '''CREATE TABLE whse_basemapping.{table} AS
-                                 SELECT * FROM whse_basemapping.{g} LIMIT 0
+                    click.echo('Loading %s by watershed group' % layer['table'])
+                    # overwrite if the table exists
+                    db[table].drop()
+                    if wsg:
+                        groups = wsg.split(',')
+                    else:
+                        groups = fwa.list_groups(db=db)
+                    for i, group in enumerate(sorted(groups)):
+                        click.echo(group)
+                        db.ogr2pg(gdb,
+                                  in_layer=group,
+                                  out_layer=layer['table']+'_'+group.lower(),
+                                  schema='whse_basemapping',
+                                  dim=3)
+                        # combine the groups into a single table
+                        if i == 0:
+                            sql = '''CREATE TABLE whse_basemapping.{table} AS
+                                     SELECT * FROM whse_basemapping.{g} LIMIT 0
+                                  '''.format(table=layer['table'],
+                                             g=layer['table']+'_'+group.lower())
+                            db.execute(sql)
+                        sql = '''INSERT INTO whse_basemapping.{table}
+                                 SELECT * FROM whse_basemapping.{g}
                               '''.format(table=layer['table'],
                                          g=layer['table']+'_'+group.lower())
                         db.execute(sql)
-                    sql = '''INSERT INTO whse_basemapping.{table}
-                             SELECT * FROM whse_basemapping.{g}
-                          '''.format(table=layer['table'],
-                                     g=layer['table']+'_'+group.lower())
-                    db.execute(sql)
-                    # drop the source group table
-                    db['whse_basemapping.'+layer['table']+'_'+group.lower()].drop()
-
+                        # drop the source group table
+                        db['whse_basemapping.'+layer['table']+'_'+group.lower()].drop()
+            else:
+                click.echo("""{l}: source file {f} does not exist, skipping"""
+                           .format(l=layer['table'],
+                                   f=layer['source_file']))
     # Clean and index the data
     for layer in settings.source_tables:
         if layer['table'] in in_layers:
