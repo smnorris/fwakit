@@ -39,6 +39,8 @@ $ fwakit create_db
 $ fwakit load
 ```
 
+Note that because the tool downloads the entire set of FWA files to disk and then duplicates the data in postgres, ~20G or so of free disk space is required. If this is not available, run the load tool layer by layer or load the data manually using ogr2ogr and [GDAL VFS /vsicurl and /vsizip](http://www.gdal.org/gdal_virtual_file_systems.html)
+
 ## Usage
 
 #### Use the Python module:
