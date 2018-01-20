@@ -28,8 +28,7 @@ drop_columns = ['ogc_fid', 'objectid', 'geometry_area', 'geometry_length']
 # - primary key (id)
 # - additional fields to be indexed
 # - whether table is 'grouped' (a table for each watershed group in the gdb)
-#with open('sources.json') as json_file:
-    #source_tables = json.load(json_file)
 source_tables = json.loads(pkg_resources.resource_string(__name__, "sources.json"))
+
 # note distinct source files
 source_files = list(set([f['source_file'] for f in source_tables]))
