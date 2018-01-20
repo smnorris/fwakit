@@ -5,3 +5,4 @@ recursive-include tests *.py
 include CHANGES.txt LICENSE.txt README.md
 include requirements.txt
 include fwakit/sql/*.sql
+include fwakit/sources.json

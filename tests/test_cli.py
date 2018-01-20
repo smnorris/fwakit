@@ -19,6 +19,11 @@ SIMPLE_FILE = 'FWA_BC.gdb.zip'
 SIMPLE_LAYER = 'fwa_lakes_poly'
 
 
+def test_setUp():
+    db = fwa.util.connect(DB_URL)
+    db.create_schema('whse_basemapping')
+
+
 def test_download():
     runner = CliRunner()
     for f in [GROUPED_FILE, SIMPLE_FILE]:

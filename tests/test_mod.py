@@ -40,6 +40,6 @@ def test_add_ltree():
     assert test_column in db[test_table].columns
 
 
-def test_tearDown():
-    db = fwa.util.connect(DB_URL)
-    db.drop_schema('whse_basemapping', cascade=True)
+#def test_tearDown():
+#    db = fwa.util.connect(DB_URL)
+#    db.drop_schema('whse_basemapping', cascade=True)

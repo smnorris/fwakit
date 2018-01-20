@@ -69,7 +69,7 @@ def download(files, source_url, dl_path):
     if files:
         files = files.split(",")
     else:
-        files = settings.sources_dict
+        files = settings.source_files
     for source_file in files:
         url = urljoin(source_url, source_file)
         click.echo('Downloading '+source_file)
@@ -97,109 +97,112 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
     db.execute(fwa.queries['fwa_wsc2ltree'])
 
     click.echo('Loading FWA source data to PostgreSQL database')
-    # load watershed groups first, required for everything else
-    source_file = 'FWA_BC.gdb.zip'
-    source_gdb = os.path.join(dl_path, os.path.splitext(source_file)[0])
-    table = 'fwa_watershed_groups_poly'
-    click.echo('Loading '+table)
-    db.ogr2pg(source_gdb,
-              in_layer=table.upper(),
-              out_layer=table,
-              schema='whse_basemapping',
-              dim=2)
-    # iterate through all data specified in config, loading only tables specified
-    for source_file in settings.sources_dict:
-        source_gdb = os.path.join(dl_path,
-                                  os.path.splitext(source_file)[0])
-        # load data that is not split up by watershed group
-        for table in settings.sources_dict[source_file]:
-            if table in in_layers and table != 'fwa_watershed_groups_poly':
-                if 'grouped' not in settings.sources_dict[source_file][table].keys():
-                    click.echo('Loading ' + table)
+
+    # load watershed groups first, it is required for processing subsequent data
+    layer = [t for t in settings.source_tables if t['table'] == 'fwa_watershed_groups_poly'][0]
+    click.echo('Loading '+layer['table'])
+    gdb = os.path.join(dl_path, os.path.splitext(layer['source_file'])[0])
+    if 'whse_basemapping.fwa_watershed_groups_poly' not in db.tables:
+        db.ogr2pg(gdb,
+                  in_layer=layer['table'].upper(),
+                  out_layer=layer['table'],
+                  schema='whse_basemapping',
+                  dim=2)
+
+    # iterate the rest of the data specified in config (and command option)
+    for layer in settings.source_tables:
+        table = fwa.tables[layer['table']]
+        if layer['table'] in in_layers:
+            gdb = os.path.join(dl_path, os.path.splitext(layer['source_file'])[0])
+            # load data that is not split up by watershed group
+            if not layer['grouped']:
+                click.echo('Loading %s' % layer['table'])
+                # don't overwrite these
+                if table not in db.tables:
+                    # only load the group of interest if specified
                     if not wsg:
-                        db.ogr2pg(source_gdb,
-                                  in_layer=table.upper(),
-                                  out_layer=table,
+                        db.ogr2pg(gdb,
+                                  in_layer=layer['table'].upper(),
+                                  out_layer=layer['table'],
                                   schema='whse_basemapping',
                                   dim=3)
                     else:
-                        db.ogr2pg(source_gdb,
-                                  in_layer=table.upper(),
-                                  out_layer=table,
+                        db.ogr2pg(gdb,
+                                  in_layer=layer['table'].upper(),
+                                  out_layer=layer['table'],
                                   schema='whse_basemapping',
                                   sql='watershed_group_code IN ({g})'.format(g=wsg),
                                   dim=3)
-        # load data that *is* split up by watershed group
-        for table in settings.sources_dict[source_file]:
-            if table in in_layers:
-                if 'grouped' in settings.sources_dict[source_file][table].keys():
-                    click.echo('Loading %s by watershed group' % table)
-                    db['whse_basemapping.'+table].drop()
-                    if wsg:
-                        groups = wsg.split(',')
-                    else:
-                        groups = fwa.list_groups(db=db)
-                    for i, group in enumerate(sorted(groups)):
-                        click.echo(group)
-                        db.ogr2pg(source_gdb,
-                                  in_layer=group,
-                                  out_layer=group.lower(),
-                                  schema='whse_basemapping',
-                                  dim=3)
-                        # combine the groups into a single table
-                        if i == 0:
-                            sql = '''CREATE TABLE whse_basemapping.{table} AS
-                                     SELECT * FROM whse_basemapping.{g} LIMIT 0
-                                  '''.format(table=table, g=group.lower())
-                            db.execute(sql)
-                        sql = '''INSERT INTO whse_basemapping.{table}
-                                 SELECT * FROM whse_basemapping.{g}
-                              '''.format(table=table, g=group.lower())
+            # load data that *is* split up by watershed group
+            else:
+                click.echo('Loading %s by watershed group' % layer['table'])
+                # overwrite if the table exists
+                db[table].drop()
+                if wsg:
+                    groups = wsg.split(',')
+                else:
+                    groups = fwa.list_groups(db=db)
+                for i, group in enumerate(sorted(groups)):
+                    click.echo(group)
+                    db.ogr2pg(gdb,
+                              in_layer=group,
+                              out_layer=layer['table']+'_'+group.lower(),
+                              schema='whse_basemapping',
+                              dim=3)
+                    # combine the groups into a single table
+                    if i == 0:
+                        sql = '''CREATE TABLE whse_basemapping.{table} AS
+                                 SELECT * FROM whse_basemapping.{g} LIMIT 0
+                              '''.format(table=layer['table'],
+                                         g=layer['table']+'_'+group.lower())
                         db.execute(sql)
-                        # drop the source group table
-                        db['whse_basemapping.'+group.lower()].drop()
+                    sql = '''INSERT INTO whse_basemapping.{table}
+                             SELECT * FROM whse_basemapping.{g}
+                          '''.format(table=layer['table'],
+                                     g=layer['table']+'_'+group.lower())
+                    db.execute(sql)
+                    # drop the source group table
+                    db['whse_basemapping.'+layer['table']+'_'+group.lower()].drop()
 
     # Clean and index the data
-    for source_file in settings.sources_dict:
-        for layer in settings.sources_dict[source_file]:
-            if layer in in_layers:
-                click.echo(fwa.tables[layer]+': cleaning')
-                # drop ogr and esri columns
-                table = fwa.tables[layer]
-                for column in settings.drop_columns:
-                    if column in db[table].columns:
-                        db[table].drop_column(column)
-                # ensure _id primary/foreign keys are int - ogr maps them to floats
-                # integer should be fine for all but linear_feature_id
-                for column in db[table].columns:
-                    if column[-3:] == '_id':
-                        if column == 'linear_feature_id':
-                            column_type = 'bigint'
-                        else:
-                            column_type = 'integer'
-                        sql = '''ALTER TABLE {t} ALTER COLUMN {col} TYPE {type}
-                              '''.format(t=table, col=column, type=column_type)
-                        db.execute(sql)
-                # make sure there are no '<Null>' strings in codes
-                for column in ['fwa_watershed_code', 'local_watershed_code']:
-                    if column in db[table].columns:
-                        sql = """UPDATE {t} SET {c} = NULL WHERE {c} = '<Null>'
-                              """.format(t=table, c=column)
-                        db.execute(sql)
-                # add ltree columns to tables with watershed codes
-                if 'fwa_watershed_code' in db[table].columns:
-                    click.echo(fwa.tables[layer]+': adding ltree types')
-                    fwa.add_ltree(table, db=db)
-                # add primary key constraint
-                db[table].add_primary_key(settings.sources_dict[source_file][layer]['id'])
-                click.echo(fwa.tables[layer]+': indexing')
-                # create indexes on columns noted in parameters
-                for column in settings.sources_dict[source_file][layer]['index_fields']:
-                    tablename = table.split('.')[1]
-                    db[table].create_index([column], tablename+'_'+column+'_idx')
-                # re-create geometry index
-                if 'geom' in db[table].columns:
-                    db[table].create_index_geom()
+    for layer in settings.source_tables:
+        if layer['table'] in in_layers:
+            click.echo(layer['table']+': cleaning')
+            # drop ogr and esri columns
+            table = fwa.tables[layer['table']]
+            for column in settings.drop_columns:
+                if column in db[table].columns:
+                    db[table].drop_column(column)
+            # ensure _id primary/foreign keys are int - ogr maps them to floats
+            # integer should be fine for all but linear_feature_id
+            for column in db[table].columns:
+                if column[-3:] == '_id':
+                    if column == 'linear_feature_id':
+                        column_type = 'bigint'
+                    else:
+                        column_type = 'integer'
+                    sql = '''ALTER TABLE {t} ALTER COLUMN {col} TYPE {type}
+                          '''.format(t=table, col=column, type=column_type)
+                    db.execute(sql)
+            # make sure there are no '<Null>' strings in codes
+            for column in ['fwa_watershed_code', 'local_watershed_code']:
+                if column in db[table].columns:
+                    sql = """UPDATE {t} SET {c} = NULL WHERE {c} = '<Null>'
+                          """.format(t=table, c=column)
+                    db.execute(sql)
+            # add ltree columns to tables with watershed codes
+            if 'fwa_watershed_code' in db[table].columns:
+                click.echo(layer['table']+': adding ltree types')
+                fwa.add_ltree(table, db=db)
+            # add primary key constraint
+            db[table].add_primary_key(layer['id'])
+            click.echo(layer['table']+': indexing')
+            # create indexes on columns noted in parameters
+            for column in layer['index_fields']:
+                db[table].create_index([column])
+            # re-create geometry index
+            if 'geom' in db[table].columns:
+                db[table].create_index_geom()
 
     # create additional functions, convenience tables, lookups
     # (run queries with 'create_' prefix if required sources are present)

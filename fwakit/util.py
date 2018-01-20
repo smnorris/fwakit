@@ -31,7 +31,7 @@ CHUNK_SIZE = 1024
 
 def config(source_url=settings.source_url,
            dl_path=settings.dl_path,
-           sources_dict=settings.sources_dict,
+           source_tables=settings.source_tables,
            log_file=settings.log_file,
            log_console=settings.log_console,
            log_level=settings.log_level,
@@ -65,7 +65,7 @@ def config(source_url=settings.source_url,
     # set each global variable to the passed-in parameter value
     settings.source_url = source_url
     settings.dl_path = dl_path
-    settings.sources_dict = sources_dict
+    settings.source_tables = source_tables
     settings.log_console = log_console
     settings.log_file = log_file
     settings.log_level = log_level
@@ -251,15 +251,14 @@ def download_and_unzip(url, unzip_dir):
 
 
 def get_shortcuts():
+    """ Return a dictionary of shortcuts to tables in settings.source_tables
+    """
     aliases = {}
     tables = {}
-    for source_file in settings.sources_dict:
-        for table in settings.sources_dict[source_file]:
-            t = settings.sources_dict[source_file][table]
-            a = settings.sources_dict[source_file][table]['alias']
-            # add schema qualified table name to table dict, alias dict
-            tables[table] = 'whse_basemapping.' + table
-            aliases[a] = 'whse_basemapping.' + table
+    for source_table in settings.source_tables:
+        # add schema qualified table name to table dict, alias dict
+        tables[source_table['table']] = 'whse_basemapping.' + source_table['table']
+        aliases[source_table['alias']] = 'whse_basemapping.' + source_table['table']
     return (tables, aliases)
 
 
