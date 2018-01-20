@@ -11,14 +11,15 @@ try:
 except ImportError:
     from urllib2 import urlopen
 
-import tempfile
-import zipfile
-import os
-import logging as lg
+
 import datetime as dt
+import logging as lg
+import os
 import pkg_resources
 import sys
+import tempfile
 import unicodedata
+import zipfile
 
 import requests
 
@@ -27,6 +28,24 @@ import pgdata
 from . import settings
 
 CHUNK_SIZE = 1024
+
+
+class QueryDict(object):
+    """Provide a dict like interface to files in the /sql folder
+    """
+    def __init__(self):
+        self.queries = None
+
+    def __getitem__(self, query_name):
+        if pkg_resources.resource_exists(
+            __name__,
+            os.path.join("sql", query_name+'.sql')):
+            return pkg_resources.resource_string(
+                __name__,
+                os.path.join("sql", query_name+'.sql')).decode('utf-8')
+
+        else:
+            raise ValueError("Invalid query name: %r" % query_name)
 
 
 def config(source_url=settings.source_url,
@@ -127,7 +146,9 @@ def log(message, level=None, name=None, filename=None):
 
         # convert message to ascii for console display so it doesn't break
         # windows terminals
-        message = unicodedata.normalize('NFKD', make_str(message)).encode('ascii', errors='replace').decode()
+        message = unicodedata.normalize(
+            'NFKD',
+            make_str(message)).encode('ascii', errors='replace').decode()
         print(message)
         sys.stdout = standard_out
 

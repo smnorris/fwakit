@@ -9,8 +9,6 @@ Tools for working with BC Freshwater Atlas loaded to PostgreSQL
 from __future__ import absolute_import
 
 import datetime
-import os
-import pkg_resources
 import re
 
 from sqlalchemy.dialects.postgresql import INTEGER, BIGINT
@@ -19,20 +17,7 @@ import fwakit as fwa
 from fwakit import util
 
 
-class QueryDict(object):
-    def __init__(self):
-        self.queries = None
-
-    def __getitem__(self, query_name):
-        if pkg_resources.resource_exists(__name__, os.path.join("sql", query_name+'.sql')):
-            return pkg_resources.resource_string(
-                __name__,
-                os.path.join("sql", query_name+'.sql')).decode('utf-8')
-
-        else:
-            raise ValueError("Invalid query name: %r" % query_name)
-
-queries = QueryDict()
+queries = util.QueryDict()
 
 
 def list_groups(table=None, db=None):
@@ -70,8 +55,7 @@ def add_ltree(table, column_lookup={"fwa_watershed_code": "wscode_ltree",
               db=None):
     """
     Add watershed code ltree types and indexes to specified table.
-
-    Making a copy of the table is *much* faster than adding columns and updating
+    (making a copy of the table is *much* faster than updating)
     """
     if not db:
         db = util.connect()
@@ -145,7 +129,7 @@ def get_events(table, pk, filters=None, param=None, db=None):
 def create_events_from_points(point_table, point_id, out_table,
                               threshold, match_col=None, db=None):
     """
-      Locate points in provided input table on stream network.
+      Locate points in provided input table on FWA stream network.
 
       Outputs a table with following fields:
           point_id (input points' integer unique id)
@@ -159,15 +143,13 @@ def create_events_from_points(point_table, point_id, out_table,
           distance_to_stream (distance from point to matched stream)
           match number (1, 2, 3 etc in order of distance)
 
-      pointTable - name of source point table
-      pointId    - INTEGER field holding unique id within pointTable
-      outTable   - name of destination event table within db
-                   note - overwritten if it already exists
-      threshold  - max distance of source points from stream (doesn't apply
-                   for lakes)
-
-      NOTES
-      - All inputs and outputs must be in the same database
+      point_table - name of source point table
+      point_id    - primary key for point table (integer)
+      out_table   - output event table (overwritten if it already exists)
+      threshold   - max distance of source points from stream (does not apply
+                    for lakes)
+      match_col   - name of column
+      db          - pgdata database instance
     """
     if not db:
         db = util.connect()
@@ -175,13 +157,11 @@ def create_events_from_points(point_table, point_id, out_table,
     if match_col and match_col not in db[point_table].columns:
         raise ValueError('match column not in source table')
     # check that id is an integer field
-    if type(db[point_table].column_types[point_id]) not in (INTEGER,
-                                                                 BIGINT):
+    if type(db[point_table].column_types[point_id]) not in (INTEGER, BIGINT):
         raise ValueError('source table pk must be integer/bigint')
     # grab id and fwa_watershed_code of all points
     if match_col:
-        pts = list(db[point_table].distinct(point_id,
-                                                 match_col))
+        pts = list(db[point_table].distinct(point_id, match_col))
     else:
         pts = list(db[point_table].distinct(point_id))
     # Find nearest neighbouring stream
