@@ -113,7 +113,7 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
                                   os.path.splitext(source_file)[0])
         # load data that is not split up by watershed group
         for table in settings.sources_dict[source_file]:
-            if table in in_layers:
+            if table in in_layers and table != 'fwa_watershed_groups_poly':
                 if 'grouped' not in settings.sources_dict[source_file][table].keys():
                     click.echo('Loading ' + table)
                     if not wsg:
@@ -227,7 +227,7 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
 
 @cli.command()
 @click.option('--out_path', '-o', type=click.Path(exists=True), help='Path to dump .gdb files')
-@click.option('--tables', '-t', help='Comma separated list of tables to dump',
+@click.option('--layers', '-l', help='Comma separated list of layers/tables to dump',
               default='fwa_stream_networks_sp,fwa_watershed_groups_poly,fwa_lakes_poly')
 @click.option('--wsg', '-g', default='VICT', help='Watershed group code to dump')
 @click.option('--out_format', '-of', default='GPKG', callback=validate_format,
