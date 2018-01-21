@@ -13,7 +13,7 @@ DL_PATH = 'test_data'
 
 GROUPED_FILE = 'FWA_STREAM_NETWORKS_SP.gdb.zip'
 GROUPED_LAYER = 'fwa_stream_networks_sp'
-GROUP = 'VICT'
+GROUP = 'COWN'
 
 SIMPLE_FILE = 'FWA_BC.gdb.zip'
 SIMPLE_LAYER = 'fwa_lakes_poly'

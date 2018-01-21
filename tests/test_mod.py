@@ -20,7 +20,7 @@ def test_list_groups():
     db = fwa.util.connect(DB_URL)
     groups = fwa.list_groups(table='whse_basemapping.fwa_stream_networks_sp',
                              db=db)
-    assert groups[0] == 'VICT'
+    assert groups[0] == 'COWN'
     assert len(groups) == 1
 
 
