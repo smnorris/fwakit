@@ -9,7 +9,7 @@ import pkg_resources
 source_url = r'ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public/'
 
 # where to download FWA source data to
-dl_path = 'source_data'
+dl_path = 'fwakit_downloads'
 
 # logging info
 log_level = lg.INFO

@@ -235,49 +235,58 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
 
 
 @cli.command()
-@click.option('--out_path', '-o', type=click.Path(exists=True), help='Path to dump .gdb files')
-@click.option('--layers', '-l', help='Comma separated list of layers/tables to dump',
-              default='fwa_stream_networks_sp,fwa_watershed_groups_poly,fwa_lakes_poly')
-@click.option('--wsg', '-g', default='VICT', help='Watershed group code to dump')
+@click.option('--out_path', '-o', type=click.Path(exists=True),
+              help='Path to dump .gdb files')
+@click.option('--layers', '-l',
+              help='Comma separated list of layers/tables to dump',
+              default=','.join(['fwa_watershed_groups_poly',
+                                'fwa_lakes_poly',
+                                'fwa_stream_networks_sp',
+                                'fwa_linear_boundaries_sp',
+                                'fwa_watersheds_poly_sp']))
+@click.option('--skiplayers', '-sl',
+              help='Comma separated list of tables to skip')
+@click.option('--wsg', '-g', default='VICT',
+              help='Watershed group code to dump')
 @click.option('--out_format', '-of', default='GPKG', callback=validate_format,
               help='Output (ogr) format. Default GPKG (Geopackage)')
-def dump(out_path, tables, wsg, out_format):
+def dump(out_path, layers, skiplayers, wsg, out_format):
     """Dump sample data to file
     """
     db = fwa.util.connect()
-    dump_tables = tables
-    for source_file in settings.sources_dict:
-        for table in settings.sources_dict[source_file]:
-            if table in dump_tables:
-                # out file name is taken directly from config
-                out_file = os.path.splitext(source_file)[0]
-                # prepend out path to file name
-                if out_path:
-                    out_file = os.path.join(out_path, out_file)
-                # modify the file extension if writing to gpkg
-                if out_format == 'GPKG':
-                    out_file = out_file.replace('.gdb', '.gpkg')
-                # get geometry type if dumping to gdb
-                if out_format == 'FileGDB':
-                    sql = """SELECT geometrytype(geom)
-                             FROM {t} LIMIT 1""".format(t=fwa.tables[table])
-                    geom_type = db.query(sql).fetchone()[0]
-                else:
-                    geom_type = None
-                columns = db[fwa.tables[table]].columns
-                # don't try and dump ltree types
-                columns = [c for c in columns if 'ltree' not in c]
-                sql = """SELECT {c} FROM {t}
-                         WHERE watershed_group_code = '{g}'
-                      """.format(c=', '.join(columns),
-                                 t=fwa.tables[table],
-                                 g=wsg)
-                if 'grouped' not in settings.sources_dict[source_file][table].keys():
-                    outlayer = table
-                else:
-                    outlayer = wsg
-                db.pg2ogr(sql, out_format, out_file, outlayer=outlayer,
-                          geom_type=geom_type)
+    # parse the input layers
+    dump_tables = parse_layers(layers, skiplayers)
+    for layer in settings.source_tables:
+        if layer['table'] in dump_tables:
+            # out file name is taken directly from config
+            out_file = os.path.splitext(layer['source_file'])[0]
+            # prepend out path to file name
+            if out_path:
+                out_file = os.path.join(out_path, out_file)
+            # modify the file extension if writing to gpkg
+            if out_format == 'GPKG':
+                out_file = out_file.replace('.gdb', '.gpkg')
+            # get geometry type if dumping to gdb
+            if out_format == 'FileGDB':
+                sql = """SELECT geometrytype(geom)
+                         FROM {t} LIMIT 1""".format(t=fwa.tables[layer['table']])
+                geom_type = db.query(sql).fetchone()[0]
+            else:
+                geom_type = None
+            columns = db[fwa.tables[layer['table']]].columns
+            # don't try and dump ltree types
+            columns = [c for c in columns if 'ltree' not in c]
+            sql = """SELECT {c} FROM {t}
+                     WHERE watershed_group_code = '{g}'
+                  """.format(c=', '.join(columns),
+                             t=fwa.tables[layer['table']],
+                             g=wsg)
+            if not layer['grouped']:
+                outlayer = layer['table']
+            else:
+                outlayer = wsg
+            db.pg2ogr(sql, out_format, out_file, outlayer=outlayer,
+                      geom_type=geom_type)
 
 
 if __name__ == '__main__':
