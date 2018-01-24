@@ -4,6 +4,9 @@ Python/PostgreSQL tools for working with British Columbia's [Freshwater Atlas](h
 
 [![Build Status](https://travis-ci.org/smnorris/fwakit.svg?branch=master)](https://travis-ci.org/smnorris/fwakit) [![Coverage Status](https://coveralls.io/repos/github/smnorris/fwakit/badge.svg?branch=master)](https://coveralls.io/github/smnorris/fwakit?branch=master)
 
+## NOTE
+This module is under active development. Documentation may not be current and tests currently fail. 
+
 ## Requirements
 - Python 2.7+ (tested with 2.7.14, 3.6.4)
 - PostgreSQL/PostGIS (tested with 10.1/2.4.2)
