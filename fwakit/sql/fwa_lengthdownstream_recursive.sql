@@ -1,4 +1,4 @@
--- fwa_downstreamlength_recursive()
+-- fwa_lengthdownstream_recursive()
 
 -- Return length of stream downstream of a point, given blue_line_key and
 -- downstream_route_measure.
@@ -11,7 +11,7 @@
 -- the stream network and is provided for reference/proof of concept only.
 -- Use fwa_downstreamlength() instead.
 
-CREATE OR REPLACE FUNCTION fwa_downstreamlength_recursive(
+CREATE OR REPLACE FUNCTION fwa_lengthdownstream_recursive(
     blkey integer,
     measure double precision,
     padding numeric DEFAULT .001

@@ -5,6 +5,7 @@ import fwakit as fwa
 
 
 DB_URL = os.environ['FWA_DB_TEST']
+GROUP = 'SALM'
 
 
 def test_trim_ws_code():
@@ -20,14 +21,14 @@ def test_list_groups():
     db = fwa.util.connect(DB_URL)
     groups = fwa.list_groups(table='whse_basemapping.fwa_stream_networks_sp',
                              db=db)
-    assert groups[0] == 'COWN'
+    assert groups[0] == GROUP
     assert len(groups) == 1
 
 
 def test_get_local_code():
     db = fwa.util.connect(DB_URL)
     assert (fwa.trim_ws_code(
-            fwa.get_local_code(354155107, 3400, db=db)) == '920-076175-303123')
+            fwa.get_local_code(354154853, 31850, db=db)) == '920-722273-132687-611805')
 
 
 def test_add_ltree():

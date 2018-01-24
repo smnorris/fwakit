@@ -1,11 +1,11 @@
--- fwa_downstreamlength()
+-- fwa_lengthdownstream()
 
 -- Return length of stream downstream of a point, given blue_line_key and
 -- downstream_route_measure.
 -- Note that where possible this returns side channels/distributaries as well
 -- as main-stems.
 
-CREATE OR REPLACE FUNCTION fwa_downstreamlength(
+CREATE OR REPLACE FUNCTION fwa_lengthdownstream(
     blkey integer,
     measure double precision,
     padding numeric DEFAULT .001

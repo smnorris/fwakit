@@ -126,108 +126,18 @@ def get_events(table, pk, filters=None, param=None, db=None):
         return db.query(sql)
 
 
-def create_events_from_points(point_table, point_id, out_table,
-                              threshold, match_col=None, db=None):
-    """
-      Locate points in provided input table on FWA stream network.
-
-      Outputs a table with following fields:
-          point_id (input points' integer unique id)
-          linear_feature_id
-          blue_line_key
-          downstream_route_measure
-          fwa_watershed_code
-          local_watershed_code
-          watershed_group_code
-          waterbody_key
-          distance_to_stream (distance from point to matched stream)
-          match number (1, 2, 3 etc in order of distance)
-
-      point_table - name of source point table
-      point_id    - primary key for point table (integer)
-      out_table   - output event table (overwritten if it already exists)
-      threshold   - max distance of source points from stream (does not apply
-                    for lakes)
-      match_col   - name of column
-      db          - pgdata database instance
+def reference_points(point_table, point_id, out_table, threshold=100, db=None):
+    """Create a table that references input points to stream network
     """
     if not db:
         db = util.connect()
-    # check that match_col is present if specified
-    if match_col and match_col not in db[point_table].columns:
-        raise ValueError('match column not in source table')
-    # check that id is an integer field
-    if type(db[point_table].column_types[point_id]) not in (INTEGER, BIGINT):
-        raise ValueError('source table pk must be integer/bigint')
-    # grab id and fwa_watershed_code of all points
-    if match_col:
-        pts = list(db[point_table].distinct(point_id, match_col))
-    else:
-        pts = list(db[point_table].distinct(point_id))
-    # Find nearest neighbouring stream
-    event_list = []
-    start_time = datetime.datetime.utcnow()
-    for n, pt in enumerate(pts):
-        if match_col:
-            pt = pt[point_id]
-        #self.note_progress('create_events_from_points: ', n,len(pts), start_time)
-        matched = False
-        # get streams
-        sql = db.build_query(fwa.queries['streams_closest_to_point'],
-                                  {"inputPointTable": point_table,
-                                   "inputPointId": point_id})
-        # get ws_code and distance to stream of nearby distinct streams
-        streams = db.query(sql, (pt, threshold))
-        if streams:
-        # if the point's match field is the same as one of the stream's,
-        # use only that stream
-            if match_col:
-                if pt[match_col] in [r[match_col] for r in streams]:
-                    # move matching stream to front of the list
-                    streams = [s for s in streams
-                               if s[match_col] == pt[match_col]]
-                    matched = True
-            #n_other_nearby_streams = len(streams) - 1
-            #stream = streams[0]
-            for n_stream, stream in enumerate(streams):
-                stream_code = stream["fwa_watershed_code"]
-                distance_to_stream = stream["distance_to_stream"]
-                # snap the point to the matching stream
-                sql = db.build_query(fwa.queries['locate_point_on_stream'],
-                                          {"inputPointTable": point_table,
-                                           "inputPointId": point_id})
-                row = db.query_one(sql, (pt, stream_code, threshold))
-                # append row to list
-                if row["downstream_route_measure"]:
-                    insert_row = dict(row)
-                    insert_row[point_id] = pt
-                    insert_row["matched"] = matched
-                    insert_row["distance_to_stream"] = distance_to_stream
-                    #insert_row["n_other_nearby_streams"] = n_other_nearby_streams
-                    insert_row["n_stream_match"] = n_stream + 1
-                    event_list.append(insert_row)
-    if event_list:
-        db[out_table].drop()
-        sql = """CREATE TABLE {out_table}
-                   (
-                   {point_id} int,
-                   linear_feature_id int8,
-                   blue_line_key int4,
-                   downstream_route_measure float8,
-                   fwa_watershed_code text,
-                   local_watershed_code text,
-                   waterbody_key int4,
-                   watershed_group_code text,
-                   distance_to_stream float8,
-                   matched boolean,
-                   n_stream_match int
-                   )""".format(out_table=out_table,
-                               point_id=point_id)
-                  # --n_other_nearby_streams int
-        db.execute(sql)
-        db[out_table].insert_many(event_list)
-    else:
-        return 'No input points within %sm of a stream.' % str(threshold)
+    # create preliminary table, with all potential matches within threshold
+    sql = db.build_query(
+        fwa.queries['reference_points'],
+        {'point_table': point_table,
+         'point_id': point_id,
+         'out_table': out_table})
+    db.execute(sql, (threshold))
 
 
 def create_geom_from_events(self,

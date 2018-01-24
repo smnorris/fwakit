@@ -170,7 +170,20 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
                 click.echo("""{l}: source file {f} does not exist, skipping"""
                            .format(l=layer['table'],
                                    f=layer['source_file']))
-    # Clean and index the data
+
+
+@cli.command()
+@click.option('--layers', '-l', help='Comma separated list of tables to load')
+@click.option('--skiplayers', '-sl',
+              help='Comma separated list of tables to skip')
+@click.option('--db_url', '-db', help='Database to load files to',
+              envvar='FWA_DB')
+def clean(layers, skiplayers, db_url):
+    """Clean and index the data after load
+    """
+    db = fwa.util.connect(db_url)
+    # parse the input layers
+    in_layers = parse_layers(layers, skiplayers)
     for layer in settings.source_tables:
         table = fwa.tables[layer['table']]
         if layer['table'] in in_layers and table in db.tables:
@@ -216,7 +229,9 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
     # create upstream/downstream functions and invalid code lookup
     if 'whse_basemapping.fwa_stream_networks_sp' in db.tables:
         db.execute(fwa.queries['create_invalid_codes'])
-        for f in ['fwa_downstreamlength', 'fwa_upstreamlength']:
+        for f in ['fwa_lengthdownstream',
+                  'fwa_lengthupstream',
+                  'fwa_lengthinstream']:
             db.execute(fwa.queries[f])
 
     # create named streams table
@@ -232,6 +247,15 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
     # simplify the 20k-50k stream lookup
     if 'whse_basemapping.fwa_streams_20k_50k' in db.tables:
         db.execute(fwa.queries['create_lut_50k_20k_wsc'])
+
+    # create text_pattern_pos indexes on watershed codes
+    # (these aren't included in sources.json indexes as index type is required)
+    for table in db.tables:
+        for col in ['fwa_watershed_code', 'local_watershed_code']:
+            if 'fwa_' in table and col in db[table].columns:
+                sql = """CREATE INDEX ON {t} ({c} text_pattern_ops)
+                      """.format(t=table, c=col)
+                db.execute(sql)
 
 
 @cli.command()
