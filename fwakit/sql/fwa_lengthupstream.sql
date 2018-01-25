@@ -1,5 +1,21 @@
--- fwa_lengthupstream()
--- Provided blue_line_key and downstream_route_measure, return length upstream
+-- fwa_lengthupstream(blue_line_key, downstream_route_measure, padding)
+
+-- Return sum of length of stream upstream of a point represented by
+-- a blue line key and a downstream route measure
+
+-- Note 1
+-- All segments that are referancable on the network are included -
+-- everything with a local watershed code. This will include side channels,
+-- lake construction lines, subsurface flow - anything that has a local code.
+
+-- Note 2
+-- The function only sums the length of streams present in the database. Any
+-- stream flow outside of BC will not be included in the total.
+
+-- Note 3
+-- The function will not return anything if provided  a location that does not
+-- have a local code - this cannot be referenced on the network
+
 
 CREATE OR REPLACE FUNCTION fwa_lengthupstream(
     blkey integer,
@@ -15,6 +31,7 @@ WITH a AS
    WHERE
      blue_line_key = blkey
      AND downstream_route_measure <= (measure + padding)
+     AND localcode_ltree IS NOT NULL AND localcode_ltree != ''
    ORDER BY downstream_route_measure DESC
    LIMIT 1),
 

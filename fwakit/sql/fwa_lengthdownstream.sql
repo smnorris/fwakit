@@ -9,7 +9,7 @@
 -- lake construction lines, subsurface flow - anything that has a local code.
 
 -- Note 2
--- The function only sums the lenght of streams present in the database. Any
+-- The function only sums the length of streams present in the database. Any
 -- stream flow outside of BC will not be included in the total.
 
 -- Note 3
