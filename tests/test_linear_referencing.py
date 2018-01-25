@@ -60,5 +60,5 @@ def test_fwa_lengthupstream():
                                        pts.downstream_route_measure)
              FROM pts"""
     r = db.query(sql)
-    assert round(r.fetchone()[0]) == 1484
+    assert round(r.fetchone()[0]) == 1483
 
