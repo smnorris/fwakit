@@ -12,108 +12,139 @@ CREATE OR REPLACE FUNCTION fwa_lengthinstream(
 
 RETURNS double precision AS $$
 
-
 -- find the watershed / local codes of starting (lower) point (a)
-WITH a AS
-(SELECT
+with bottom as (
+  SELECT 1 as k,
+    linear_feature_id,
     blue_line_key,
     wscode_ltree,
     localcode_ltree,
-    length_metre,
-    downstream_route_measure
+    downstream_route_measure,
+    length_metre
   FROM whse_basemapping.fwa_stream_networks_sp
   WHERE blue_line_key = blkey_a
-  AND downstream_route_measure < (measure_a - padding)
+  -- use zero measure when measure minus padding is negative
+  AND downstream_route_measure <= GREATEST(0::float, (measure_a - padding)::float)
+  -- do not compute anything for null local codes, we don't know where they are
+  AND localcode_ltree IS NOT NULL AND localcode_ltree != ''
   ORDER BY downstream_route_measure desc
-  LIMIT 1),
+  LIMIT 1
+),
 
 -- find the watershed / local codes of ending (higher) point (b)
-b AS
-(SELECT
+top as
+(
+  SELECT 1 as k,
+    linear_feature_id,
     blue_line_key,
     wscode_ltree,
     localcode_ltree,
-    length_metre,
-    downstream_route_measure
+    downstream_route_measure,
+    length_metre
   FROM whse_basemapping.fwa_stream_networks_sp
   WHERE blue_line_key = blkey_b
-  AND downstream_route_measure < (measure_b - padding)
+  -- use zero measure when measure minus padding is negative
+  AND downstream_route_measure <= GREATEST(0::float, (50 - padding)::float)
+  -- do not compute anything for null local codes, we don't know where they are
+  AND localcode_ltree IS NOT NULL AND localcode_ltree != ''
   ORDER BY downstream_route_measure desc
-  LIMIT 1),
+  LIMIT 1
+),
 
--- Find all stream segments between a and b by searching upstream of a
--- and downstream of b
+-- Find all stream segments between bottom and top by searching upstream of
+-- bottom and downstream of top. We could find the instream length by subtracting
+-- downstream bottom from downstream top, but that doesn't ensure that the
+-- points actually have this relationship
+
 instream as
 (
   SELECT
-    SUM(str.length_metre) as length_metre
+    1 as k,
+    SUM(CASE WHEN str.length_metre IS NULL THEN 0
+             ELSE str.length_metre
+        END) as length_metre
   FROM
      whse_basemapping.fwa_stream_networks_sp str
 
   -- DOWNSTREAM JOIN
-  INNER JOIN b ON
-    -- donwstream criteria 1 - same blue line, lower measure
-    (str.blue_line_key = b.blue_line_key AND
-     str.downstream_route_measure <= b.downstream_route_measure)
-    OR
-    -- criteria 2 - watershed code a is a child of watershed code b
-    (str.wscode_ltree @> b.wscode_ltree
-        AND (
-             -- AND local code is lower
-             str.localcode_ltree < subltree(b.localcode_ltree, 0, nlevel(str.localcode_ltree))
-             -- OR wscode and localcode are equivalent
-             OR str.wscode_ltree = str.localcode_ltree
-             -- OR any missed side channels on the same watershed code
-             OR (str.wscode_ltree = b.wscode_ltree AND
-                 str.blue_line_key != b.blue_line_key AND
-                 str.localcode_ltree < b.localcode_ltree)
-             )
-    )
+  INNER JOIN top ON
+    (
+      -- donwstream criteria 1 - same blue line, lower measure
+      (str.blue_line_key = top.blue_line_key AND
+       str.downstream_route_measure <= top.downstream_route_measure)
+      OR
+      -- criteria 2 - watershed code a is a child of watershed code b
+      (str.wscode_ltree @> top.wscode_ltree
+          AND (
+               -- AND local code is lower
+               str.localcode_ltree < subltree(top.localcode_ltree, 0, nlevel(str.localcode_ltree))
+               -- OR wscode and localcode are equivalent
+               OR str.wscode_ltree = str.localcode_ltree
+               -- OR any missed side channels on the same watershed code
+               OR (str.wscode_ltree = top.wscode_ltree AND
+                   str.blue_line_key != top.blue_line_key AND
+                   str.localcode_ltree < top.localcode_ltree)
+               )
+      )
+  )
 
   -- UPSTREAM JOIN
-  INNER JOIN a ON
+  INNER JOIN bottom ON
     -- b is a child of a, always
-    str.wscode_ltree <@ a.wscode_ltree
-    AND
-        -- conditional upstream join logic, based on whether watershed codes are equivalent
-      CASE
-        -- first, consider simple case - streams where wscode and localcode are equivalent
-        -- this is all segments with equivalent bluelinekey and a larger measure
-        -- (plus fudge factor)
-         WHEN
-            a.wscode_ltree = a.localcode_ltree AND
-            (
-                (str.blue_line_key <> a.blue_line_key OR
-                 str.downstream_route_measure > a.downstream_route_measure + padding)
-            )
-         THEN TRUE
-         -- next, the more complicated case - where wscode and localcode are not equal
-         WHEN
-            a.wscode_ltree != a.localcode_ltree AND
-            (
-             -- higher up the blue line (plus fudge factor)
-                (str.blue_line_key = a.blue_line_key AND
-                 str.downstream_route_measure > a.downstream_route_measure + padding)
-                OR
-             -- tributaries: b wscode > a localcode and b wscode is not a child of a localcode
-                (str.wscode_ltree > a.localcode_ltree AND
-                 NOT str.wscode_ltree <@ a.localcode_ltree)
-                OR
-             -- capture side channels: b is the same watershed code, with larger localcode
-                (str.wscode_ltree = a.wscode_ltree
-                 AND str.localcode_ltree >= a.localcode_ltree)
-            )
-          THEN TRUE
-      END
+    str.wscode_ltree <@ bottom.wscode_ltree
+    -- never return the start or finish segments, they are added at the end
+  AND
+      -- conditional upstream join logic, based on whether watershed codes are equivalent
+    CASE
+      -- first, consider simple case - streams where wscode and localcode are equivalent
+      -- this is all segments with equivalent bluelinekey and a larger measure
+      -- (plus fudge factor)
+       WHEN
+          bottom.wscode_ltree = bottom.localcode_ltree AND
+          (
+              (str.blue_line_key <> bottom.blue_line_key OR
+               str.downstream_route_measure > bottom.downstream_route_measure + padding)
+          )
+       THEN TRUE
+       -- next, the more complicated case - where wscode and localcode are not equal
+       WHEN
+          bottom.wscode_ltree != bottom.localcode_ltree AND
+          (
+           -- higher up the blue line (plus fudge factor)
+              (str.blue_line_key = bottom.blue_line_key AND
+               str.downstream_route_measure > bottom.downstream_route_measure + padding)
+              OR
+           -- tributaries: b wscode > a localcode and b wscode is not a child of a localcode
+              (str.wscode_ltree > bottom.localcode_ltree AND
+               NOT str.wscode_ltree <@ bottom.localcode_ltree)
+              OR
+           -- capture side channels: b is the same watershed code, with larger localcode
+              (str.wscode_ltree = bottom.wscode_ltree
+               AND str.localcode_ltree >= bottom.localcode_ltree)
+          )
+        THEN TRUE
+    END
+  WHERE
+    str.linear_feature_id != top.linear_feature_id AND
+    str.linear_feature_id != bottom.linear_feature_id
+
 )
 
--- Find actual length by removing the bottom end of the stream on which a lies,
--- and the top end of the stream on which b lies
+
 SELECT
-  i.length_metre -
-    (measure_b - b.downstream_route_measure) -
-    ((a.downstream_route_measure + a.length_metre) - measure_a) AS result
-FROM instream i, a, b
+  CASE
+    -- when points are on the same stream, just return the difference of the measures
+    WHEN b.blue_line_key = t.blue_line_key
+    THEN measure_b - measure_a
+    -- otherwise, add things up
+    ELSE
+      (b.length_metre - (measure_a - b.downstream_route_measure)) + -- bottom segment
+      (measure_b - t.downstream_route_measure) + -- top segment
+      + i.length_metre -- instream length
+  END as length_instream
+FROM instream i
+LEFT OUTER JOIN bottom b ON i.k = b.k
+LEFT OUTER JOIN top t on i.k = t.k
 
 $$
 language 'sql' immutable strict parallel safe;
