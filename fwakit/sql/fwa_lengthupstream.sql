@@ -13,7 +13,7 @@
 -- stream flow outside of BC will not be included in the total.
 
 -- Note 3
--- The function will not return anything if provided  a location that does not
+-- The function will not return anything if provided a location that does not
 -- have a local code - this cannot be referenced on the network
 
 

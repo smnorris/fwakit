@@ -33,6 +33,7 @@ def test_reference_points():
 
 
 def test_get_closest_points():
+    # more of a guide than a test
     db = fwa.util.connect(DB_URL)
     sql = """CREATE TABLE whse_fish.pscis_events_2 AS
              WITH closest AS
