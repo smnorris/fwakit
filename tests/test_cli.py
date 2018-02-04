@@ -52,22 +52,35 @@ def test_load_simple():
     assert SIMPLE_LAYER in db.tables_in_schema('whse_basemapping')
 
 
-def test_load_grouped():
+def test_load_streams():
     runner = CliRunner()
-    runner.invoke(cli, ['load', '-l', GROUPED_LAYER,
+    runner.invoke(cli, ['load', '-l', 'fwa_stream_networks_sp',
                                 '-p', DL_PATH,
                                 '-db', DB_URL,
                                 '-g', GROUP])
     db = fwa.util.connect(DB_URL)
-    assert GROUPED_LAYER in db.tables_in_schema('whse_basemapping')
+    assert 'fwa_stream_networks_sp' in db.tables_in_schema('whse_basemapping')
+
+
+def test_load_watersheds():
+    runner = CliRunner()
+    runner.invoke(cli, ['load', '-l', 'fwa_watersheds_poly_sp',
+                                '-p', DL_PATH,
+                                '-db', DB_URL,
+                                '-g', GROUP])
+    db = fwa.util.connect(DB_URL)
+    assert 'fwa_watersheds_poly_sp' in db.tables_in_schema('whse_basemapping')
 
 
 def test_clean():
     runner = CliRunner()
-    runner.invoke(cli, ['clean', '-l', GROUPED_LAYER,
+    runner.invoke(cli, ['clean', '-l', 'fwa_stream_networks_sp,fwa_watersheds_poly_sp',
                                  '-db', DB_URL])
     db = fwa.util.connect(DB_URL)
-    assert 'ogc_fid' not in db['whse_basemapping.'+GROUPED_LAYER].columns
-    assert 'objectid' not in db['whse_basemapping.'+GROUPED_LAYER].columns
-    assert 'wscode_ltree' in db['whse_basemapping.'+GROUPED_LAYER].columns
+    assert 'ogc_fid' not in db['whse_basemapping.fwa_stream_networks_sp'].columns
+    assert 'objectid' not in db['whse_basemapping.fwa_stream_networks_sp'].columns
+    assert 'wscode_ltree' in db['whse_basemapping.fwa_stream_networks_sp'].columns
+    assert 'ogc_fid' not in db['whse_basemapping.fwa_watersheds_poly_sp'].columns
+    assert 'objectid' not in db['whse_basemapping.fwa_watersheds_poly_sp'].columns
+    assert 'wscode_ltree' in db['whse_basemapping.fwa_watersheds_poly_sp'].columns
     assert 'fwa_watershed_groups_subdivided' in db.tables_in_schema('whse_basemapping')

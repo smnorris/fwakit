@@ -225,8 +225,10 @@ def clean(layers, skiplayers, db_url):
 
     # create additional functions, convenience tables, lookups
     # (run queries with 'create_' prefix if required sources are present)
-
-    # create upstream/downstream functions and invalid code lookup
+    # create general upstream / downstream functions based on watershed codes
+    db.execute(fwa.queries['fwa_upstream'])
+    #db.execute(fwa.queries['fwa_downstream'])
+    # for streams, create length upstream/downstream functions and invalid code lookup
     if 'whse_basemapping.fwa_stream_networks_sp' in db.tables:
         db.execute(fwa.queries['create_invalid_codes'])
         for f in ['fwa_lengthdownstream',

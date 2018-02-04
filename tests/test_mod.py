@@ -41,6 +41,29 @@ def test_add_ltree():
     assert test_column in db[test_table].columns
 
 
-def test_tearDown():
+def test_upstream_wsds_unequal_codes():
     db = fwa.util.connect(DB_URL)
-    db.drop_schema('whse_basemapping', cascade=True)
+    r = db.query("""SELECT COUNT(*)
+                    FROM whse_basemapping.fwa_watersheds_poly_sp wsd
+                    WHERE FWA_Upstream('920.722273'::ltree,
+                                       '920.722273.097248'::ltree,
+                                       wsd.wscode_ltree,
+                                       wsd.localcode_ltree)
+                 """).fetchone()
+    assert r[0] == 3261
+
+
+def test_upstream_wsds_equal_codes():
+    db = fwa.util.connect(DB_URL)
+    r = db.query("""SELECT COUNT(*)
+                    FROM whse_basemapping.fwa_watersheds_poly_sp wsd
+                    WHERE FWA_Upstream('920.705877'::ltree,
+                                       '920.705877'::ltree,
+                                       wsd.wscode_ltree,
+                                       wsd.localcode_ltree)
+                 """).fetchone()
+    assert r[0] == 23
+
+#def test_tearDown():
+#    db = fwa.util.connect(DB_URL)
+#    db.drop_schema('whse_basemapping', cascade=True)

@@ -28,7 +28,7 @@ def test_reference_points():
                          'whse_fish.pscis_events_1',
                          300,
                          db=db)
-    r = db.query('SELECT COUNT(*) FROM whse_fish.pscis_events')
+    r = db.query('SELECT COUNT(*) FROM whse_fish.pscis_events_1')
     assert r.fetchone()[0] == 228
 
 
@@ -61,4 +61,3 @@ def test_fwa_lengthupstream():
              FROM pts"""
     r = db.query(sql)
     assert round(r.fetchone()[0]) == 1483
-
