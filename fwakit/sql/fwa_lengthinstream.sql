@@ -134,6 +134,7 @@ instream as
 SELECT
   CASE
     -- when points are on the same stream, just return the difference of the measures
+    -- **Actually, no - we always want to use everything, so that side channels are included!**
     WHEN b.blue_line_key = t.blue_line_key
     THEN measure_b - measure_a
     -- otherwise, add things up
