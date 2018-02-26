@@ -24,6 +24,19 @@
       "id":"bay_and_channel_id"
    },
    {
+      "alias":"coastlines",
+      "index_fields":[
+         "edge_type",
+         "blue_line_key",
+         "watershed_key",
+         "watershed_group_code"
+      ],
+      "grouped":false,
+      "source_file":"FWA_BC.gdb.zip",
+      "table":"fwa_coastlines_sp",
+      "id":"linear_feature_id"
+   },
+   {
       "alias":"edge_type_codes",
       "index_fields":{
 
@@ -207,5 +220,17 @@
       "source_file":"FWA_WATERSHEDS_POLY.gdb.zip",
       "table":"fwa_watersheds_poly_sp",
       "id":"watershed_feature_id"
-   }
+   },
+   {
+      "alias":"named_watersheds",
+      "index_fields":[
+         "gnis_name",
+         "blue_line_key",
+         "fwa_watershed_code"
+      ],
+      "grouped":false,
+      "source_file":"FWA_BC.gdb.zip",
+      "table":"fwa_named_watersheds_poly",
+      "id":"named_watershed_id"
+  }
 ]

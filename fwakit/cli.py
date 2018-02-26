@@ -48,7 +48,6 @@ def create_db(db_url):
     pgdata.create_db(db_url)
     db = pgdata.connect(db_url)
     db.execute('CREATE EXTENSION IF NOT EXISTS postgis')
-    db.execute('CREATE EXTENSION IF NOT EXISTS lostgis')
     db.execute('CREATE EXTENSION IF NOT EXISTS ltree')
     db.execute('CREATE SCHEMA IF NOT EXISTS whse_basemapping')
 
@@ -173,7 +172,7 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
 
 
 @cli.command()
-@click.option('--layers', '-l', help='Comma separated list of tables to load')
+@click.option('--layers', '-l', help='Comma separated list of tables to clean')
 @click.option('--skiplayers', '-sl',
               help='Comma separated list of tables to skip')
 @click.option('--db_url', '-db', help='Database to load files to',
@@ -220,8 +219,16 @@ def clean(layers, skiplayers, db_url):
             for column in layer['index_fields']:
                 db[table].create_index([column])
             # re-create geometry index
-            if 'geom' in db[table].columns:
-                db[table].create_index_geom()
+            #if 'geom' in db[table].columns:
+            #    db.execute('DROP INDEX IF EXISTS {t}_geom_geom_idx'
+            #               .format(t=layer['table']))
+            #    db[table].create_index_geom()
+            # index watershed codes
+            for col in ['fwa_watershed_code', 'local_watershed_code']:
+                if col in db[table].columns:
+                    sql = """CREATE INDEX IF NOT EXISTS ix_{n}_{c}_tpo ON {t} ({c} text_pattern_ops)
+                              """.format(n=layer['table'], t=table, c=col)
+                    db.execute(sql)
 
     # create additional functions, convenience tables, lookups
     # (run queries with 'create_' prefix if required sources are present)
@@ -252,12 +259,7 @@ def clean(layers, skiplayers, db_url):
 
     # create text_pattern_pos indexes on watershed codes
     # (these aren't included in sources.json indexes as index type is required)
-    for table in db.tables:
-        for col in ['fwa_watershed_code', 'local_watershed_code']:
-            if 'fwa_' in table and col in db[table].columns:
-                sql = """CREATE INDEX ON {t} ({c} text_pattern_ops)
-                      """.format(t=table, c=col)
-                db.execute(sql)
+
 
 
 @cli.command()
