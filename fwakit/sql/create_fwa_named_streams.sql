@@ -7,13 +7,15 @@ DROP TABLE IF EXISTS whse_basemapping.fwa_named_streams;
 CREATE TABLE whse_basemapping.fwa_named_streams
 (fwa_stream_networks_label_id SERIAL PRIMARY KEY,
  gnis_name TEXT,
+ stream_order INTEGER,
  watershed_group_code TEXT,
  geom GEOMETRY);
 
 INSERT INTO whse_basemapping.fwa_named_streams
-  (gnis_name, watershed_group_code, geom)
+  (gnis_name, stream_order, watershed_group_code, geom)
 SELECT
   str.gnis_name,
+  str.stream_order,
   str.watershed_group_code,
   ST_Simplify(ST_Union(str.geom), 25) AS geom
   FROM whse_basemapping.fwa_stream_networks_sp str
@@ -24,4 +26,4 @@ SELECT
   WHERE gnis_name IS NOT NULL
   AND lk.waterbody_key IS NULL
   AND mmwb.waterbody_key IS NULL
-  GROUP BY str.gnis_name, str.watershed_group_code;
+  GROUP BY str.gnis_name, str.stream_order, str.watershed_group_code;

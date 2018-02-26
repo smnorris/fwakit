@@ -43,7 +43,7 @@ def cli():
 @click.option('--db_url', '-db', help='Database to load files to',
               envvar='FWA_DB')
 def create_db(db_url):
-    """Create a fresh database, install extensions and create schema
+    """Create a fresh database/schema
     """
     pgdata.create_db(db_url)
     db = pgdata.connect(db_url)
