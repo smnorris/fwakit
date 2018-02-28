@@ -161,6 +161,75 @@ def length_to_top_wsd(blue_line_key, measure, db=None):
     return (upper_meas - measure)
 
 
+def points_to_watersheds(in_table, in_id, out_table, dissolve=False, db=None):
+    """
+    Create a table holding watersheds upstream of the referenced locations
+    provided. Input table must include fields:
+       - unique id (in_id),
+       - wscode_ltree
+       - localcode_ltree
+    """
+    if not db:
+        db = util.connect()
+    sql = """
+        CREATE TABLE {out_table} AS
+        SELECT
+          pt.{pk},
+          pt.wscode_ltree as wscode_bottom,
+          pt.localcode_ltree as localcode_bottom,
+          wsd2.watershed_feature_id,
+          wsd2.wscode_ltree,
+          wsd2.localcode_ltree,
+          wsd2.geom
+        FROM {in_table} pt
+        INNER JOIN whse_basemapping.fwa_watersheds_poly_sp wsd2
+        ON
+          -- b is a child of a, always
+          wsd2.wscode_ltree <@ pt.wscode_ltree
+        AND
+            -- conditional upstream join logic, based on whether watershed codes are equivalent
+          CASE
+            -- first, consider simple case - streams where wscode and localcode are equivalent
+             WHEN
+                pt.wscode_ltree = pt.localcode_ltree
+             THEN TRUE
+             -- next, the more complicated case - where wscode and localcode are not equal
+             WHEN
+                pt.wscode_ltree != pt.localcode_ltree AND
+                (
+                 -- tributaries: b wscode > a localcode and b wscode is not a child of a localcode
+                    (wsd2.wscode_ltree > pt.localcode_ltree AND
+                     NOT wsd2.wscode_ltree <@ pt.localcode_ltree)
+                    OR
+                 -- capture side channels: b is the same watershed code, with larger localcode
+                    (wsd2.wscode_ltree = pt.wscode_ltree
+                     AND wsd2.localcode_ltree >= pt.localcode_ltree)
+                )
+              THEN TRUE
+          END
+          """.format(in_table=in_table, pk=in_id, out_table=out_table)
+    db.execute(sql)
+    db[out_table].create_index([in_id])
+    db[out_table].create_index_geom()
+    if dissolve:
+        sql = """
+              CREATE TEMPORARY TABLE temp_wsds_union AS
+              SELECT
+                {pk},
+                wscode_bottom as wscode_ltree,
+                localcode_bottom as localcode_ltree,
+                ST_Union(geom)
+              FROM {out_table}
+              GROUP BY {pk}, wscode_bottom, localcode_bottom
+              """.format(pk=in_id)
+        db.execute(sql)
+        db[out_table].drop()
+        db.execute("CREATE TABLE {out_table} AS SELECT * FROM temp_wsds_union")
+        # re-index the output
+        db[out_table].create_index([in_id])
+        db[out_table].create_index_geom()
+
+
 def create_geom_from_events(self,
                             in_table,
                             out_table,

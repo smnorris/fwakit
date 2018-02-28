@@ -3,6 +3,10 @@ Changes
 
 All issue numbers are relative to https://github.com/smnorris/fwakit/issues.
 
+0.0.1b (2018-02-27)
+------------------
+- expand on examples
+- add preliminary watershed generation functions
 
 0.0.1a (2018-01-)
 ------------------
