@@ -271,7 +271,9 @@ def clean(layers, skiplayers, db_url):
                                 'fwa_lakes_poly',
                                 'fwa_stream_networks_sp',
                                 'fwa_linear_boundaries_sp',
-                                'fwa_watersheds_poly_sp']))
+                                'fwa_watersheds_poly_sp',
+                                'fwa_rivers_poly',
+                                'fwa_manmade_waterbodies_poly']))
 @click.option('--skiplayers', '-sl',
               help='Comma separated list of tables to skip')
 @click.option('--wsg', '-g', default='VICT',
