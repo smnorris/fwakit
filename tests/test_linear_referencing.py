@@ -7,9 +7,6 @@ import fwakit as fwa
 DB_URL = os.environ['FWA_DB_TEST']
 TEST_SHP = r'tests/data/pscis.shp'
 
-POINT_A = 4359
-POINT_B = 4452
-
 
 def test_setUp():
     db = fwa.util.connect(DB_URL)
@@ -36,15 +33,17 @@ def test_get_closest_points():
     # more of a guide than a test
     db = fwa.util.connect(DB_URL)
     sql = """CREATE TABLE whse_fish.pscis_events_2 AS
-             WITH closest AS
-             (SELECT DISTINCT ON (pt_id)
-             pt_id, distance_to_stream
-             FROM whse_fish.pscis_events_1
-             ORDER BY pt_id, distance_to_stream)
+             WITH closest AS (
+               SELECT DISTINCT ON (pt_id)
+                 pt_id,
+                 distance_to_stream
+               FROM whse_fish.pscis_events_1
+               ORDER BY pt_id, distance_to_stream
+             )
              SELECT DISTINCT e.*
              FROM whse_fish.pscis_events_1 e
              INNER JOIN closest ON e.pt_id = closest.pt_id
-               AND e.distance_to_stream = closest.distance_to_stream
+             AND e.distance_to_stream = closest.distance_to_stream
           """
     db.execute(sql)
     r = db.query('SELECT COUNT(*) FROM whse_fish.pscis_events_2')
@@ -62,3 +61,16 @@ def test_fwa_lengthupstream():
              FROM pts"""
     r = db.query(sql)
     assert round(r.fetchone()[0]) == 1483
+
+
+def test_length_to_top_wsd():
+    # simple case, just one line to measure
+    blue_line_key = 354148454
+    measure = 100
+    db = fwa.util.connect(DB_URL)
+    assert round(fwa.length_to_top_wsd(blue_line_key, measure, db)) == 1366
+    # several lines
+    blue_line_key = 354136084
+    measure = 1200
+    db = fwa.util.connect(DB_URL)
+    assert round(fwa.length_to_top_wsd(blue_line_key, measure, db)) == 1279
