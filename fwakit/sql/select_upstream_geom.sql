@@ -17,6 +17,7 @@ WITH a AS
 upstream AS
 (
   SELECT
+    b.linear_feature_id,
     b.blue_line_key,
     b.geom
   FROM a
@@ -48,8 +49,8 @@ upstream AS
     END
 )
 
-SELECT blue_line_key, geom
+SELECT linear_feature_id, blue_line_key, geom
 FROM a
 UNION ALL
-SELECT blue_line_key, geom
-FROM upstream;
+SELECT linear_feature_id, blue_line_key, geom
+FROM upstream
