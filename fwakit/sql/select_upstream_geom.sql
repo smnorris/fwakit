@@ -21,8 +21,9 @@ upstream AS
     b.blue_line_key,
     b.geom
   FROM a
-  LEFT OUTER JOIN whse_basemapping.fwa_stream_networks_sp b ON
-    b.wscode_ltree <@ a.wscode_ltree
+  LEFT OUTER JOIN whse_basemapping.fwa_stream_networks_sp b
+  ON b.wscode_ltree <@ a.wscode_ltree
+  AND b.localcode_ltree != a.localcode_ltree
   AND b.linear_feature_id != a.linear_feature_id
   AND
     CASE

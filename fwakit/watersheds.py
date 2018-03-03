@@ -1,7 +1,39 @@
+import os
+import tempfile
+try:
+    from urllib.parse import urlparse
+except ImportError:
+     from urlparse import urlparse
+
 import arcpy
 
 import fwakit as fwa
 
+def create_arcgis_db_connection(db_url=None, connection_file=None):
+    if not db_url:
+        db_url = os.environ['FWA_DB']
+    if not connection_file:
+        connection_file = os.path.join(tempfile.gettempdir(), 'fwa_db', 'fwakit.sde')
+    if not os.path.exists(connection_file):
+        out_path, out_file = os.path.split(connection_file)
+        u = urlparse(db_url)
+        database = u.path[1:]
+        user = u.username
+        password = u.password
+        host = u.hostname
+        port = u.port
+
+        arcpy.CreateDatabaseConnection_management(
+            out_path,
+            out_file,
+            'POSTGRESQL',
+            host,
+            'DATABASE_AUTH',
+            user,
+            password,
+            'SAVE_USERNAME',
+            database)
+    return connection_file
 
 def points_to_watersheds(in_table, in_id, out_table, dissolve=False, db=None):
     """
@@ -126,7 +158,15 @@ def generate_new_wsd(wsd_in, streams, wsd_out, dem):
       at which we want the new watershed polygon to end
     - wsd_out: output feature class
     """
-    arcpy.env.workspace = "in_memory"
+
+    if arcpy.CheckExtension("Spatial") == "Available":
+        arcpy.CheckOutExtension("Spatial")
+    else:
+        raise EnvironmentError('Spatial Analyst license unavailable')
+
+    #arcpy.env.workspace = "IN_MEMORY"
+    arcpy.env.workspace = r"T:\test\t.gdb"
+    arcpy.env.overwriteOutput = True
     arcpy.env.extent = "MAXOF"
 
     # make required feature layers of input watersheds and streams
@@ -134,9 +174,11 @@ def generate_new_wsd(wsd_in, streams, wsd_out, dem):
     arcpy.MakeFeatureLayer_management(wsd_in, 'wsd_fl')
 
     # convert streams to raster
-    arcpy.FeatureToRaster_conversion('streams_fl', 'OBJECTID',
+    if arcpy.Exists('streams_pourpt'):
+        arcpy.Delete_management('streams_pourpt')
+    arcpy.FeatureToRaster_conversion('streams_fl', 'blue_line_key',
                                      'streams_pourpt', '25')
-
+    print 'clipping dem'
     # clip DEM to extent of watershed + 250m
     extent = arcpy.Describe(wsd_in).extent
     expansion = 250
@@ -150,7 +192,7 @@ def generate_new_wsd(wsd_in, streams, wsd_out, dem):
 
     # output rasters clipped to input wsd poly by creating a mask
     arcpy.env.mask = 'wsd_fl'
-
+    print 'filling'
     # fill the dem, calculate flow direction and create watershed raster
     fill = arcpy.sa.Fill('dem_wsd')
     flow_direction = arcpy.sa.FlowDirection(fill, 'NORMAL')
@@ -159,14 +201,16 @@ def generate_new_wsd(wsd_in, streams, wsd_out, dem):
     # check to make sure there is a result - if all output raster is null,
     # do not try to create a watershed polygon output
     out_is_null = arcpy.sa.IsNull(wsd_grid)
-    check_min = arcpy.GetRasterProperties_management(out_is_null, "MINIMUM").getOutput(0)
-    check_max = arcpy.GetRasterProperties_management(out_is_null,"MAXIMUM").getOutput(0)
+    check_min_result = arcpy.GetRasterProperties_management(out_is_null, "MINIMUM")
+    check_min = check_min_result.getOutput(0)
+    check_max_result = arcpy.GetRasterProperties_management(out_is_null,"MAXIMUM")
+    check_max = check_max_result.getOutput(0)
     if '0' in (check_min, check_max):
         arcpy.RasterToPolygon_conversion(wsd_grid, wsd_out, "SIMPLIFY")
 
 
 def refine_watershed(ref_table, ref_id, ref_id_value, prelim_wsd_table,
-                     top_threshold=100, bottom_threshold=50, db=None):
+                     dem, top_threshold=100, bottom_threshold=50, db=None):
     """
     Based on provided table and id, refine preliminary watershed for that
     location if requred
@@ -176,6 +220,9 @@ def refine_watershed(ref_table, ref_id, ref_id_value, prelim_wsd_table,
     """
     if not db:
         db = fwa.util.connect()
+
+    # create arcgis connection file pointing to db
+    arcgis_db = create_arcgis_db_connection(db.url)
 
     # get standard fwa linear referencing info about the location, plus
     # - whether it is on a double line river / canal
@@ -194,9 +241,10 @@ def refine_watershed(ref_table, ref_id, ref_id_value, prelim_wsd_table,
 
         # extract all stream upstream of point
         sql = fwa.queries['select_upstream_geom']
-        q = db.mogrify(sql, (stream_measure, blue_line_key, stream_measure))
+        q = db.mogrify(sql, (pt_measure, blue_line_key, pt_measure))
+
         arcpy.MakeQueryLayer_management(
-            ARCGIS_DB_CONNECTION,
+            arcgis_db,
             'streams',
             q,
             'linear_feature_id')
@@ -214,7 +262,8 @@ def refine_watershed(ref_table, ref_id, ref_id_value, prelim_wsd_table,
                    SELECT DISTINCT wsd.watershed_feature_id, wsd.geom
                    FROM {prelim_table} p
                    INNER JOIN whse_basemapping.fwa_watersheds_poly_sp wsd
-                   ON ST_Relate(p.geom, wsd.geom, '****1****')
+                   ON (p.geom && wsd.geom
+                   AND ST_Relate(p.geom, wsd.geom, '****1****'))
                    WHERE p.{ref_id} = %s
                    AND p.wscode_ltree = %s
                    AND p.localcode_ltree = %s
@@ -223,7 +272,7 @@ def refine_watershed(ref_table, ref_id, ref_id_value, prelim_wsd_table,
                              ref_id=ref_id)
             q = db.mogrify(sql, (ref_id_value, wscode_ltree, localcode_ltree))
             arcpy.MakeQueryLayer_management(
-                ARCGIS_DB_CONNECTION,
+                arcgis_db,
                 'wsd_to_refine',
                 q,
                 'watershed_feature_id')
@@ -240,8 +289,8 @@ def refine_watershed(ref_table, ref_id, ref_id_value, prelim_wsd_table,
                   """
             q = db.mogrify(sql, (wscode_ltree, localcode_ltree))
             arcpy.MakeQueryLayer_management(
-                ARCGIS_DB_CONNECTION,
+                arcgis_db,
                 'wsd_to_refine',
                 q,
                 'watershed_feature_id')
-        generate_new_wsd('wsd_to_refine', 'streams', 'wsd_refined', DEM)
+        generate_new_wsd('wsd_to_refine', 'streams', r'T:\test\wsd.shp', dem)
