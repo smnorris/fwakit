@@ -120,10 +120,11 @@ def location_info(ref_table, ref_id, ref_id_value, db=None):
               pts.localcode_ltree,
               CASE
                 WHEN riv.waterbody_key IS NOT NULL
-                OR (mmwb.waterbody_key IS NOT NULL
-                    AND mmwb.feature_code = 'GA03950000')
-                THEN True
-              END as waterbody,
+                THEN riv.waterbody_key
+                WHEN mmwb.waterbody_key IS NOT NULL
+                 AND mmwb.feature_code = 'GA03950000'
+                THEN mmwb.waterbody_key
+              END as waterbody_key,
               s.downstream_route_measure as stream_measure
             FROM {ref_table} pts
             LEFT JOIN LATERAL
@@ -158,14 +159,16 @@ def generate_new_wsd(wsd_in, streams, wsd_out, dem):
       at which we want the new watershed polygon to end
     - wsd_out: output feature class
     """
+    debug = True
 
     if arcpy.CheckExtension("Spatial") == "Available":
         arcpy.CheckOutExtension("Spatial")
     else:
         raise EnvironmentError('Spatial Analyst license unavailable')
 
-    #arcpy.env.workspace = "IN_MEMORY"
-    arcpy.env.workspace = r"T:\test\t.gdb"
+    arcpy.env.workspace = "IN_MEMORY"
+    if debug:
+        arcpy.env.workspace = r"T:\test\t.gdb"
     arcpy.env.overwriteOutput = True
     arcpy.env.extent = "MAXOF"
 
@@ -173,7 +176,11 @@ def generate_new_wsd(wsd_in, streams, wsd_out, dem):
     arcpy.MakeFeatureLayer_management(streams, 'streams_fl')
     arcpy.MakeFeatureLayer_management(wsd_in, 'wsd_fl')
 
+    if debug:
+        arcpy.FeatureClassToFeatureClass_conversion('wsd_fl', r"T:\test\t.gdb", 'wsd_adj')
+
     # convert streams to raster
+    # delete existing raster if it is present
     if arcpy.Exists('streams_pourpt'):
         arcpy.Delete_management('streams_pourpt')
     arcpy.FeatureToRaster_conversion('streams_fl', 'blue_line_key',
@@ -231,46 +238,32 @@ def refine_watershed(ref_table, ref_id, ref_id_value, prelim_wsd_table,
      pt_measure,
      wscode_ltree,
      localcode_ltree,
-     on_river_flag,
+     waterbody_key,
      stream_measure) = location_info(ref_table, ref_id, ref_id_value)
 
     # determine if refining of watershed is required
-    if on_river_flag or (fwa.length_to_top_wsd(blue_line_key,
+    if waterbody_key or (fwa.length_to_top_wsd(blue_line_key,
                                                pt_measure) > top_threshold and
                          pt_measure > bottom_threshold):
 
         # extract all stream upstream of point
         sql = fwa.queries['select_upstream_geom']
         q = db.mogrify(sql, (pt_measure, blue_line_key, pt_measure))
-
         arcpy.MakeQueryLayer_management(
             arcgis_db,
             'streams',
             q,
             'linear_feature_id')
 
-        # extract area to be refined. The area used is simply the primary
-        # watershed in which the point lies for most cases, but when the location
+        # Extract area to be refined. The area used will be the primary
+        # watershed in which the point lies for simple cases, but when the location
         # is referenced to a double line river/canal we need to use adjacent
         # non-waterbody watershed polygons
-        if on_river_flag:
-            # get adjacent watersheds / share a boundary - see these for
-            # ST_Relate documentation:
-            # - https://postgis.net/docs/using_postgis_dbmanagement.html#DE-9IM)
-            # - http://postgis.17.x6.nabble.com/ST-Touches-and-line-segment-td3562507.html
-            sql = """
-                   SELECT DISTINCT wsd.watershed_feature_id, wsd.geom
-                   FROM {prelim_table} p
-                   INNER JOIN whse_basemapping.fwa_watersheds_poly_sp wsd
-                   ON (p.geom && wsd.geom
-                   AND ST_Relate(p.geom, wsd.geom, '****1****'))
-                   WHERE p.{ref_id} = %s
-                   AND p.wscode_ltree = %s
-                   AND p.localcode_ltree = %s
-                   AND wsd.waterbody_key = 0
-                  """.format(prelim_table=prelim_wsd_table,
-                             ref_id=ref_id)
-            q = db.mogrify(sql, (ref_id_value, wscode_ltree, localcode_ltree))
+        if waterbody_key:
+            sql = fwa.queries['select_wsds_adjacent_to_river_location']
+            sql = db.build_query(sql, {'ref_table': ref_table,
+                                       'ref_id': ref_id})
+            q = db.mogrify(sql, (ref_id_value,))
             arcpy.MakeQueryLayer_management(
                 arcgis_db,
                 'wsd_to_refine',
