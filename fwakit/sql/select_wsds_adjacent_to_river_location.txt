@@ -1,0 +1,72 @@
+/*  ********************************
+This is the same query as select_wsds_adjacent_to_river_location.sql,
+but with comments - (ArcGIS CreateQueryLayer tool does not seem to accept sql
+with inline comments)
+ ********************************
+*/
+-- For a given location (blue_line_key / downstream route measure),
+-- find watersheds adjacent to a river/canal (share a boundary) on which
+-- the site lies, not including waterbodies
+
+-- First, get site location as a point geometry on the stream
+-- and find the waterbody_key at the site
+WITH stn_point AS
+(SELECT
+  s.waterbody_key,
+  ST_LineInterpolatePoint(ST_LineMerge(s.geom), ROUND(CAST((e.downstream_route_measure - s.downstream_route_measure) / s.length_metre AS NUMERIC), 5)) AS geom
+  FROM $ref_table e
+ INNER JOIN whse_basemapping.fwa_stream_networks_sp s
+ON e.linear_feature_id = s.linear_feature_id
+WHERE $ref_id = %s),
+
+-- Find watershed poly(s) of the river/canal at the point where the site
+-- occurs (polys within 100m of the site location on the stream)
+river_wsds AS
+(SELECT
+  wsd.watershed_feature_id,
+  wsd.waterbody_key,
+  wsd.geom
+ FROM whse_basemapping.fwa_watersheds_poly_sp wsd
+ INNER JOIN stn_point pt
+ ON wsd.waterbody_key = pt.waterbody_key
+ AND ST_DWithin(wsd.geom, pt.geom, 100)),
+
+-- Find watershed polygons adjacent to the river
+-- that are not lakes/rivers/manmade waterbodies (wetlands ok)
+-- See these for ST_Relate documentation:
+-- - https://postgis.net/docs/using_postgis_dbmanagement.html#DE-9IM)
+-- - http://postgis.17.x6.nabble.com/ST-Touches-and-line-segment-td3562507.html
+adjacent_wsds AS
+(SELECT
+    r.watershed_feature_id as riv_id,
+  wsd.watershed_feature_id,
+  wsd.geom,
+  ST_Distance(s.geom, wsd.geom) as dist_to_site
+FROM whse_basemapping.fwa_watersheds_poly_sp wsd
+INNER JOIN river_wsds r
+ON (r.geom && wsd.geom AND ST_Relate(r.geom, wsd.geom, '****1****'))
+INNER JOIN stn_point s ON s.waterbody_key = r.waterbody_key
+LEFT OUTER JOIN whse_basemapping.fwa_lakes_poly lk
+ON wsd.waterbody_key = lk.waterbody_key
+LEFT OUTER JOIN whse_basemapping.fwa_rivers_poly riv
+ON wsd.waterbody_key = riv.waterbody_key
+LEFT OUTER JOIN whse_basemapping.fwa_manmade_waterbodies_poly mm
+ON wsd.waterbody_key = mm.waterbody_key
+WHERE lk.waterbody_key IS NULL AND riv.waterbody_key IS NULL AND mm.waterbody_key IS NULL
+AND r.watershed_feature_id != wsd.watershed_feature_id
+AND wsd.watershed_feature_id NOT IN (SELECT watershed_feature_id FROM river_wsds)),
+
+-- return only the features associated with each river river wsd poly that
+-- are closest to the station
+nearest_adjacent_wsds AS
+(SELECT DISTINCT ON (riv_id) riv_id, watershed_feature_id, dist_to_site, geom
+FROM adjacent_wsds
+ORDER BY riv_id, dist_to_site)
+
+-- Finally, add the river polys back into the mix
+SELECT watershed_feature_id, geom
+FROM river_wsds
+UNION ALL
+SELECT watershed_feature_id, geom
+FROM nearest_adjacent_wsds
+
