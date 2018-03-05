@@ -17,7 +17,7 @@ log_file = 'True'
 log_console = 'False'
 log_name = 'fwakit'
 log_filename = 'fwakit'
-logs_folder = r'Q:\dss_workarea\snorris\projects\fwakit\logs'
+logs_folder = r'logs'
 
 # columns to drop from source data
 drop_columns = ['ogc_fid', 'objectid', 'geometry_area', 'geometry_length']

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS whse_basemapping.invalid_codes AS
+CREATE TABLE IF NOT EXISTS whse_basemapping.fwa_stream_codes_invalid AS
 SELECT
   linear_feature_id,
   blue_line_key,
