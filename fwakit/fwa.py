@@ -140,27 +140,6 @@ def reference_points(point_table, point_id, out_table, threshold=100, db=None):
     db.execute(sql, (threshold))
 
 
-def length_to_top_wsd(blue_line_key, measure, db=None):
-    """
-    Return the in-stream distance along the provided blue line key from the
-    provided measure to the maximum measure with the same local watershed code
-    as the location provided. This is the top of the watershed polygon in which
-    the given point occurs.
-    """
-    if not db:
-        db = util.connect()
-    local_code = get_local_code(blue_line_key, measure)
-    sql = """SELECT (downstream_route_measure + length_metre) AS measure
-             FROM whse_basemapping.fwa_stream_networks_sp
-             WHERE blue_line_key = %s
-             AND local_watershed_code = %s
-             ORDER BY downstream_route_measure desc
-             LIMIT 1
-          """
-    upper_meas = db.query(sql, (blue_line_key, local_code)).fetchone()[0]
-    return (upper_meas - measure)
-
-
 def create_geom_from_events(self,
                             in_table,
                             out_table,

@@ -16,12 +16,14 @@ WITH stn_point AS
 ON e.linear_feature_id = s.linear_feature_id
 WHERE $ref_id = %s),
 
--- find watershed polys that compose the river on which the point lies
--- Note that sometimes the waterbody keys may not match the wb key generated
--- in query above - hence the OR ST_DWithin, to make sure all river polys at
--- the location are captured (See wb key 328991070 for an example, on
--- the Thomposon at Kamloops)
-wsds_river AS
+-- Find watershed polys that compose the river on which the point lies.
+-- This is not a simple case of extracting watersheds with the equivalent
+-- waterbody key, waterbodies may terminate near a site, we may have to
+-- include several watershed polygons.
+-- Therefore, here we will first select watersheds with a matching wb key
+-- (within 100m) and then in the next WITH CTE, widen the selection to
+-- any watersheds with that touch the waterbody in which the point lies.
+wsds_river_prelim AS
 (SELECT
   wsd.watershed_feature_id,
   wsd.waterbody_key,
@@ -30,10 +32,25 @@ wsds_river AS
  INNER JOIN stn_point pt
   ON (wsd.waterbody_key = pt.waterbody_key
      AND ST_DWithin(wsd.geom, pt.geom, 100))
-     OR ST_DWithin(wsd.geom, pt.geom, 5)),
+     ),
+
+-- add intersectiong waterbodies if present, combining with results from above
+wsds_river AS
+(SELECT DISTINCT watershed_feature_id, waterbody_key, geom
+FROM (
+(SELECT wsd.watershed_feature_id, wsd.waterbody_key, wsd.geom
+FROM whse_basemapping.fwa_watersheds_poly_sp wsd
+INNER JOIN wsds_river_prelim p ON ST_Intersects(wsd.geom, p.geom)
+WHERE wsd.watershed_feature_id != p.watershed_feature_id
+AND wsd.waterbody_key != 0
+UNION ALL
+SELECT * FROM wsds_river_prelim)
+) as foo
+) ,
+
 
 -- find the watershed polygons that are on the banks of wsds_river, returns
--- all watersheds that share an edge with the river polys
+-- all watersheds that share an edge with the river (or lake) polys
 wsds_adjacent AS
 (SELECT
     r.watershed_feature_id as riv_id,
@@ -63,11 +80,11 @@ ORDER BY riv_id, dist_to_site),
 
 -- Extract the exterior ring from wsds_adjacent_nearest and retain only the
 -- portion that doesn't intersect with the river polys - the outside edges
-edges AS (SELECT w_adj.watershed_feature_id,
-   w_riv.watershed_feature_id as w_riv_id,
+edges AS (SELECT
+   w_adj.watershed_feature_id,
    ST_Difference(ST_ExteriorRing((ST_Dump(w_adj.geom)).geom), w_riv.geom ) as geom
-FROM wsds_adjacent_nearest w_adj
-INNER JOIN wsds_river w_riv ON w_adj.riv_id = w_riv.watershed_feature_id),
+FROM wsds_adjacent_nearest w_adj,
+(SELECT ST_Union(geom) as geom FROM wsds_river) as w_riv),
 
 -- Find the closest points along edges to the site, this is where we will
 -- cut the watersheds
@@ -90,25 +107,34 @@ UNION ALL
 SELECT 2 AS id, geom FROM stn_point
 ORDER BY id) as orderedpts),
 
--- Aggregate the watersheds extracted above (river and nearest adjacent) into
--- a single poly for cutting
+--- Aggregate the watersheds extracted above (river and nearest adjacent) into
+-- a single poly for cutting. Insert other nearby waterbodies in case we are
+-- missing part of the river when sharp angles get involved
 to_split AS
-(SELECT st_union(geom) AS geom FROM
+(SELECT (ST_Dump(ST_Union(geom))).geom AS geom FROM
 (SELECT geom FROM wsds_adjacent_nearest
  UNION ALL
- SELECT geom FROM wsds_river) as bar)
+ SELECT geom FROM wsds_river
+ UNION ALL
+ SELECT wsd.geom FROM whse_basemapping.fwa_watersheds_poly_sp wsd
+ INNER JOIN stn_point pt
+ ON ST_DWithin(wsd.geom, pt.geom, 100)
+ WHERE wsd.waterbody_key != 0) AS bar)
 
 -- Cut the aggregated watershed poly and insert the results into a temp table
 -- for adding to the prelim watersheds
-INSERT INTO wsdrefine_river_wsd_cut (geom)
+INSERT INTO public.wsdrefine_prelim ($ref_id, source, geom)
 
-SELECT baz.geom as geom
+SELECT
+  stream.$ref_id,
+  'wb cut' AS source,
+  ST_Multi(ST_Force2d(baz.geom)) AS geom
 FROM
 (SELECT
  (ST_Dump(ST_Split(ST_Snap(w.geom, b.geom, .001), b.geom))).geom
 FROM to_split w, blade b) AS baz
 INNER JOIN
-(SELECT str.geom FROM whse_basemapping.fwa_stream_networks_sp str
+(SELECT p.$ref_id, str.geom FROM whse_basemapping.fwa_stream_networks_sp str
  INNER JOIN stn_point p
  ON str.blue_line_key = p.blue_line_key
  AND str.downstream_route_measure > p.downstream_route_measure

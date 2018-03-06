@@ -1,8 +1,10 @@
 -- extract the stream on which the point lies, pulling only the geometry with
 -- a measure greater than the measure of the location
+CREATE TABLE wsdrefine_streams AS
+
 WITH stn_point AS (
   SELECT
-    e.station,
+    e.$ref_id,
     e.blue_line_key,
     e.downstream_route_measure,
     e.linear_feature_id,
@@ -75,7 +77,7 @@ stream_upstream AS
 )
 
 -- return only streams with equivalent watershed code
-CREATE TABLE wsdrefine_streams AS
+
 SELECT linear_feature_id, blue_line_key, geom
 FROM stream_at_pt
 UNION ALL

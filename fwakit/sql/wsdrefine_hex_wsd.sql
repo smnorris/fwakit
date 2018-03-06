@@ -1,6 +1,5 @@
--- wsd_hex.sql
 -- Create a hex grid covering the watershed in which a site falls
-
+CREATE TABLE public.wsdrefine_hex_wsd AS
 -- Generate a point from the measure of the site location on the stream
 WITH stn_point AS (
   SELECT
@@ -24,7 +23,7 @@ WITH stn_point AS (
 
 -- find the watershed in which the point falls
 stn_wsd AS (
-  SELECT w.watershed_feature_id, w.geom
+  SELECT p.$ref_id, w.watershed_feature_id, w.geom
   FROM stn_point p
   INNER JOIN whse_basemapping.fwa_watersheds_poly_sp w
   ON ST_Intersects(p.geom, w.geom)
@@ -36,12 +35,12 @@ hex_grid AS (
   FROM stn_wsd
 )
 
--- cut the hex grid by the watershed boundary and write to a new table
-CREATE TABLE wsdrefine_hex_wsd AS
-(SELECT
+-- cut the hex grid by the watershed boundary and write to output table
+SELECT
+  b.$ref_id,
   CASE
     WHEN ST_Within(a.geom, b.geom) THEN a.geom
     ELSE ST_Intersection(a.geom, b.geom)
   END as geom
  FROM hex_grid a
-INNER JOIN stn_wsd b ON ST_Intersects(a.geom, b.geom))
+INNER JOIN stn_wsd b ON ST_Intersects(a.geom, b.geom)

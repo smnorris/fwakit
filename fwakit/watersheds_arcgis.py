@@ -130,8 +130,11 @@ def generate_new_wsd(wsdrefine_hex, wsdrefine_streams,
     check_max = check_max_result.getOutput(0)
     if '0' in (check_min, check_max):
         arcpy.RasterToPolygon_conversion(wsd_grid,
-                                         os.path.join(temp_wksp, 'wsd_new'),
+                                         os.path.join(temp_wksp, 'wsdrefine_dem_wsd'),
                                          "SIMPLIFY")
     # load result to postgres db
-    db['public.wsd_new'].drop()
-    db.ogr2pg(temp_wksp, 'wsd_new')
+    db['public.wsdrefine_dem_wsd'].drop()
+    db.ogr2pg(temp_wksp, 'wsdrefine_dem_wsd')
+
+
+
