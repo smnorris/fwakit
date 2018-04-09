@@ -114,7 +114,7 @@ def generate_new_wsd(wsdrefine_hex, wsdrefine_streams,
 
     # fill the dem, calculate flow direction and create watershed raster
     log('Refining watershed - filling DEM')
-    fill = arcpy.sa.Fill('dem_wsd')
+    fill = arcpy.sa.Fill('dem_wsd', 100)
     flow_direction = arcpy.sa.FlowDirection(fill, 'NORMAL')
     wsd_grid = arcpy.sa.Watershed(flow_direction, 'streams_pourpt')
 
