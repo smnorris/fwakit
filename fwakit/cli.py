@@ -191,8 +191,7 @@ def clean(layers, skiplayers, db_url):
             for column in settings.drop_columns:
                 if column in db[table].columns:
                     db[table].drop_column(column)
-            # ensure _id primary/foreign keys are int - ogr maps them to floats
-            # integer should be fine for all but linear_feature_id
+            # ensure _id keys are int - ogr maps them to double
             for column in db[table].columns:
                 if column[-3:] == '_id':
                     if column == 'linear_feature_id':

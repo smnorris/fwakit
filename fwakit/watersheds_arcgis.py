@@ -135,6 +135,3 @@ def generate_new_wsd(wsdrefine_hex, wsdrefine_streams,
     # load result to postgres db
     db['public.wsdrefine_dem_wsd'].drop()
     db.ogr2pg(temp_wksp, 'wsdrefine_dem_wsd')
-
-
-

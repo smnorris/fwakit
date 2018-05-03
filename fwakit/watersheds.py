@@ -11,58 +11,104 @@ def points_to_watersheds(in_table, in_id, out_table, dissolve=False,
        - wscode_ltree
        - localcode_ltree
 
-    Note: this could likely be sped up significantly by using the pre-aggregated
+    Note: this could perhaps be sped up significantly by using the pre-aggregated
     assessment watersheds as the first step of selection rather than building
     everything from scratch.
     """
     log('Creating watersheds upstream of points referenced to streams')
     if not db:
         db = fwa.util.connect()
+    # We could wrap all of the sql below that collects the watershed polys into one
+    # query using CTE, but unfortunately performance degrades - probably due to this:
+    # https://blog.2ndquadrant.com/postgresql-ctes-are-optimization-fences/
+    # Nested subquery performance was not good either, so lets create a temporary
+    # table of prelim upstream watersheds (noting lakes and reservoirs) and then do
+    # any required additions afterwards
     sql = """
-        CREATE TABLE {out_table} AS
+        CREATE TEMPORARY TABLE temp_prelim_wsds AS
         SELECT
           pt.{pk},
-          ST_Multi(ST_Force2D(wsd2.geom)) as geom
+          wsd.waterbody_key,
+    -- note components of lakes and reservoirs
+          CASE
+            WHEN l.waterbody_key IS NOT NULL OR wb.waterbody_key IS NOT NULL
+            THEN 'wb'
+          END AS waterbody_ind,
+          ST_Multi(ST_Force2D(wsd.geom)) as geom
         FROM {in_table} pt
-        INNER JOIN whse_basemapping.fwa_watersheds_poly_sp wsd2
+        INNER JOIN whse_basemapping.fwa_watersheds_poly_sp wsd
         ON
           -- b is a child of a, always
-          wsd2.wscode_ltree <@ pt.wscode_ltree
+          wsd.wscode_ltree <@ pt.wscode_ltree
           -- don't include the bottom watershed
-        AND wsd2.localcode_ltree != pt.localcode_ltree
+        AND wsd.localcode_ltree != pt.localcode_ltree
         AND
-            -- conditional upstream join logic, based on whether watershed codes are equivalent
+    -- conditional upstream join logic, based on whether watershed codes are equivalent
           CASE
-            -- first, consider simple case - streams where wscode and localcode are equivalent
+    -- first, consider simple case - streams where wscode and localcode are equivalent
              WHEN
                 pt.wscode_ltree = pt.localcode_ltree
              THEN TRUE
-             -- next, the more complicated case - where wscode and localcode are not equal
+    -- next, the more complicated case - where wscode and localcode are not equal
              WHEN
                 pt.wscode_ltree != pt.localcode_ltree AND
                 (
-                 -- tributaries: b wscode > a localcode and b wscode is not a child of a localcode
-                    (wsd2.wscode_ltree > pt.localcode_ltree AND
-                     NOT wsd2.wscode_ltree <@ pt.localcode_ltree)
+    -- tributaries: b wscode > a localcode and b wscode is not a child of a localcode
+                    (wsd.wscode_ltree > pt.localcode_ltree AND
+                     NOT wsd.wscode_ltree <@ pt.localcode_ltree)
                     OR
-                 -- capture side channels: b is the same watershed code, with larger localcode
-                    (wsd2.wscode_ltree = pt.wscode_ltree
-                     AND wsd2.localcode_ltree >= pt.localcode_ltree)
+    -- capture side channels: b is the same watershed code, with larger localcode
+                    (wsd.wscode_ltree = pt.wscode_ltree
+                     AND wsd.localcode_ltree >= pt.localcode_ltree)
                 )
               THEN TRUE
           END
-          """.format(in_table=in_table, pk=in_id, out_table=out_table)
+        LEFT OUTER JOIN whse_basemapping.fwa_lakes_poly l
+        ON wsd.waterbody_key = l.waterbody_key
+        LEFT OUTER JOIN whse_basemapping.fwa_manmade_waterbodies_poly wb
+        ON wsd.waterbody_key = wb.waterbody_key
+    """.format(in_table=in_table, pk=in_id)
+    db.execute(sql)
+    # The above prelim query selects all watershed polygons with watershed codes
+    # greater than the codes of the poly in which the point lies. In some cases
+    # this is not enough, additional polygons with equivalent watershed codes
+    # are adjacent to the watershed in which the points lie.
+    # For example, consider a point just downstream of Pinantan Lake on Paul Creek.
+    # The bottom two watershed polys in the lake have the same watershed code
+    # as Paul Creek downstream of the lake - therefore they do not get included in
+    # a prelim wsd
+    # SO - Ensure that the entire waterbody is included below
+
+    # index the temp table
+    db.execute("CREATE INDEX ON temp_prelim_wsds (waterbody_key)")
+
+    # create output table
+    sql = """CREATE TABLE {out_table} AS
+    SELECT {pk}, waterbody_key, geom
+    FROM temp_prelim_wsds
+    UNION
+    SELECT lr.{pk}, lr.waterbody_key, ST_Multi(ST_Force2D(w.geom)) AS geom
+    FROM
+      (SELECT DISTINCT p.{pk}, p.waterbody_key
+       FROM temp_prelim_wsds p
+       WHERE waterbody_ind IS NOT NULL
+      ) AS lr
+    INNER JOIN whse_basemapping.fwa_watersheds_poly_sp w
+    ON lr.waterbody_key = w.waterbody_key
+    """.format(out_table=out_table, pk=in_id)
     db.execute(sql)
     db[out_table].create_index([in_id])
     db[out_table].create_index_geom()
-    # Note that removing the interior linework of the watersheds is
-    # *extremely* slow with ST_Union(geom) or with ST_Buffer(ST_Collect(geom))
-    # We could use some other tool (mapshaper) to run the aggregation, but
-    # Brad Sparks used this neat trick to remove need for aggregation - clip
-    # the province with the watershed. Rather than try and do it all at once,
-    # iterate through each station. This could be sped up even more by running
-    # the watersheds in parallel.
+
+    # Dissolve if specified
     if dissolve:
+        # Note that removing the interior linework of the watersheds is
+        # *extremely* slow with ST_Union(geom) or with ST_Buffer(ST_Collect(geom))
+        # We could use some other tool (mapshaper) to run the aggregation, but
+        # Brad Sparks used this neat trick to remove need for aggregation - clip
+        # the province with the watershed. Rather than try and do it all at once,
+        # iterate through each station. This could be sped up even more by running
+        # the watersheds in parallel.
         # create temp output
         db['public.wsdrefine_agg'].drop()
         sql = """CREATE TABLE public.wsdrefine_agg

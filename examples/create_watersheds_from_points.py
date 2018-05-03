@@ -5,17 +5,20 @@ import os
 
 import fwakit as fwa
 from fwakit import watersheds
-from fwakit import watersheds_arcgis
+#from fwakit import watersheds_arcgis
 from fwakit.util import log
 
 # set up the environment
 os.environ["FWA_DB"] = r"postgresql://postgres:postgres@localhost:5432/postgis"
-os.environ["GDAL_DATA"] = r"E:\sw_nt\Python27\ArcGIS10.3\Lib\site-packages\osgeo\data\gdal"
+#os.environ["GDAL_DATA"] = r"E:\sw_nt\Python27\ArcGIS10.3\Lib\site-packages\osgeo\data\gdal"
 
 
 # input data
-DEM = r'Q:\dsswhse\Data\Base\DEMs Hillshades\Base20\BC DEM.gdb\bc_dem'
-stations = r'Q:\dss_workarea\snorris\projects\streamflow_inventory\data\stations.shp'
+#DEM = r'Q:\dsswhse\Data\Base\DEMs Hillshades\Base20\BC DEM.gdb\bc_dem'
+#stations = r'Q:\dss_workarea\snorris\projects\streamflow_inventory\data\stations.shp'
+
+DEM = r'/Volumes/Data/Data/BC/raster/dem/bc_dem.tif'
+stations = r'/Volumes/Data/Projects/geobc/watershed_delineation/data/stations.shp'
 
 # load stations
 log('Loading input points to postgres')
@@ -106,11 +109,13 @@ for station in db['public.stations_referenced']:
         db.execute(sql, (ref_id_value,))
 
         # use DEM to define area upstream of point within area of interest
+        """
         watersheds_arcgis.generate_new_wsd('wsdrefine_hex_wsd',
                                            'wsdrefine_streams',
                                            DEM,
                                            db=db,
                                            in_mem=False)
+        """
         # The watershed generated with the DEM can be messy. Instead of
         # using the result of vectorizing the raster watershed, select any
         # previously generated hex grid cells that intersect with the poly
@@ -126,7 +131,7 @@ for station in db['public.stations_referenced']:
                  ON ST_Intersects(h.geom, d.geom)
                  GROUP BY h.{ref_id}
               """.format(ref_id=ref_id)
-        db.execute(sql)
+        #db.execute(sql)
     else:
         log('Not refining watershed {w}'.format(w=ref_id_value))
         # just insert the watershed where the point lies *as is*
@@ -137,20 +142,5 @@ for station in db['public.stations_referenced']:
         db.execute(sql, (ref_id_value,))
 
 # dump results to file
-out_file = r'Q:\dss_workarea\snorris\projects\streamflow_inventory\data\watersheds.shp'
-db.pg2ogr('SELECT * FROM public.wsdrefine_prelim',
-          'ESRI Shapefile',
-          out_file,
-          geom_type='MultiPolygon')
-
-# try a little harder with the dissolve
-# union/dissolve the results and discard any interior holes
-#sql = """INSERT INTO public.wsdrefine_out
-#         SELECT
-#           {ref_id},
-#           ST_MakePolygon(ST_ExteriorRing((ST_Dump(ST_Union(geom)).geom))) as geom
-#         FROM public.wsdrefine_prelim
-#         GROUP BY {ref_id}
-#      """.format(ref_id=ref_id)
-#db.execute(sql)
-
+out_file = r'/Volumes/Data/Projects/geobc/watershed_delineation/wsdrefine_prelim.shp'
+db.pg2ogr('SELECT * FROM public.wsdrefine_prelim', 'ESRI Shapefile', out_file)
