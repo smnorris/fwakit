@@ -256,6 +256,13 @@ def clean(layers, skiplayers, db_url):
     if 'whse_basemapping.fwa_streams_20k_50k' in db.tables:
         db.execute(fwa.queries['create_lut_50k_20k_wsc'])
 
+    # create a simple waterbody lookup table
+    if ('whse_basemapping.fwa_wetlands_poly' in db.tables and
+            'whse_basemapping.fwa_lakes_poly' in db.tables and
+            'whse_basemapping.fwa_manmade_waterbodies_poly' in db.tables and
+            'whse_basemapping.fwa_rivers_poly' in db.tables):
+        db.execute(fwa.queries['create_fwa_waterbodies'])
+
     # create text_pattern_pos indexes on watershed codes
     # (these aren't included in sources.json indexes as index type is required)
 
