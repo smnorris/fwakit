@@ -126,7 +126,8 @@ def get_events(table, pk, filters=None, param=None, db=None):
         return db.query(sql)
 
 
-def reference_points(point_table, point_id, out_table, threshold=100, db=None):
+def reference_points(point_table, point_id, out_table, threshold=100, closest=False,
+                     db=None):
     """Create a table that references input points to stream network
     """
     if not db:
@@ -138,6 +139,23 @@ def reference_points(point_table, point_id, out_table, threshold=100, db=None):
          'point_id': point_id,
          'out_table': out_table})
     db.execute(sql, (threshold))
+    # if 'closest' is specified, only retain the closest match
+    if closest:
+        db[out_table + "_t"].drop()
+        sql = """
+           CREATE TABLE {out_table}_t AS
+           SELECT DISTINCT ON ({point_id}) *
+           FROM {out_table}
+           ORDER BY {point_id}, distance_to_stream
+           """.format(out_table=out_table,
+                      point_id=point_id)
+        db.execute(sql)
+        db[out_table].drop()
+        schema, table = db.parse_table_name(out_table)
+        db.execute("""ALTER TABLE {out_table}_t RENAME TO {table}
+                   """.format(out_table=out_table,
+                              table=table))
+    return out_table
 
 
 def create_geom_from_events(self,
