@@ -11,8 +11,6 @@ from shapely.ops import cascaded_union
 import fwakit as fwa
 from fwakit import epa_waters
 from fwakit.util import log
-#from fwakit import watersheds_arcgis
-
 
 
 def points_to_watersheds(ref_table, ref_id, out_table, dissolve=False, db=None):
@@ -32,10 +30,7 @@ def points_to_watersheds(ref_table, ref_id, out_table, dissolve=False, db=None):
     points_to_prelim_watersheds(ref_table, ref_id, out_table)
 
     # add the first order watersheds on which the points lie (and refine if necessary)
-    add_local_watershed(ref_table, ref_id, out_table)
-
-    # add USA watersheds if availabled
-    add_ex_bc(point_table, ref_table, ref_id, out_table)
+    add_local_watersheds(ref_table, ref_id, out_table)
 
     # Dissolve if specified
     if dissolve:
@@ -203,7 +198,7 @@ def get_refine_method(fwa_point_event, db=None):
             LEFT OUTER JOIN whse_basemapping.fwa_waterbodies wb
             ON s.waterbody_key = wb.waterbody_key
             WHERE linear_feature_id = %s"""
-    waterbody_key = db.query(sql, fwa_point_event['linear_feature_id'])
+    waterbody_key = db.query(sql, fwa_point_event['linear_feature_id']).fetchone()[0]
     sql = fwa.queries['wsdrefine_length_to_top_bottom']
     sql = text(sql)
     length_to_top, length_to_bottom = db.engine.execute(
@@ -240,14 +235,38 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
     log('Adding first order watershed in which points lie to %s' %
         (prelim_wsd_table)
     )
-
     if not db:
         db = fwa.util.connect()
+
+    # create intermediate tables, required so that we can process all the DEM refinements
+    # in arcgis separately. Ensure the primary key is the right type by selecting from
+    # source table.
+    db['public.wsdrefine_hexwsd'].drop()
+    db['public.wsdrefine_streams'].drop()
+    sql = """CREATE TABLE public.wsdrefine_hexwsd AS
+             SELECT
+               {ref_id},
+               NULL::geometry(MultiPolygon, 3005) as geom
+             FROM {ref_table} LIMIT 0
+          """.format(ref_id=ref_id,
+                     ref_table=ref_table)
+    db.execute(sql)
+    sql = """CREATE TABLE public.wsdrefine_streams AS
+             SELECT
+               {ref_id},
+               NULL::integer as linear_feature_id,
+               NULL::integer as blue_line_key,
+               NULL::geometry(MultiLineString, 3005) as geom
+             FROM {ref_table} LIMIT 0
+          """.format(ref_id=ref_id,
+                     ref_table=ref_table)
+    db.execute(sql)
     for fwa_point_event in db[ref_table]:
         ref_id_value = fwa_point_event[ref_id]
         refine_method = get_refine_method(fwa_point_event)
 
-        # if on waterbody and within the set tolerances, cut the watersheds
+        # If on waterbody and inside our distance tolerances, cut the watersheds and
+        # insert directly into the prelim watersheds table
         if refine_method == 'CUT':
             log('Site {w}: refining watershed - cutting at river'.format(w=ref_id_value))
 
@@ -257,48 +276,23 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
                                        'ref_id': ref_id})
             db.execute(sql, (ref_id_value,))
 
-        # If not on a waterbody and inside the set tolerances, refine wsd with DEM
+        # If not on a waterbody and inside our distance tolerances, refine wsd with DEM
+        # to make processing later with arcgis easier, just generate the inputs required
         elif refine_method == 'DEM':
-            log('Site {w}: refining watershed - with DEM'.format(w=ref_id_value))
+            log('Site {w}: prepping to refine with DEM in ArcGIS'.format(w=ref_id_value))
 
             # create hex cutout of watershed
-            db['public.wsdrefine_hex_wsd'].drop()
-            sql = db.build_query(fwa.queries['wsdrefine_hex_wsd'],
+            sql = db.build_query(fwa.queries['wsdrefine_hexwsd'],
                                  {'ref_table': ref_table,
                                   'ref_id': ref_id})
             db.execute(sql, (ref_id_value))
 
             # extract stream upstream of the location
-            db['public.wsdrefine_streams'].drop()
             sql = db.build_query(fwa.queries['wsdrefine_streams'],
                                  {'ref_table': ref_table,
                                   'ref_id': ref_id})
             db.execute(sql, (ref_id_value,))
-
-            # use DEM to define area upstream of point within area of interest
-            watersheds_arcgis.generate_new_wsd('wsdrefine_hex_wsd',
-                                               'wsdrefine_streams',
-                                               DEM,
-                                               db=db,
-                                               in_mem=False)
-
-            # The watershed generated with the DEM can be messy. Instead of
-            # using the result of vectorizing the raster watershed, select any
-            # previously generated hex grid cells that intersect with the poly
-            # defined by the DEM. This also ensures any unwanted tails below site
-            # are removed
-            sql = """INSERT INTO {prelim_wsd_table} ({ref_id}, source, geom)
-                     SELECT
-                       h.{ref_id},
-                       'DEM refined' as source,
-                       ST_Multi(ST_Union(h.geom)) as geom
-                     FROM public.wsdrefine_hex_wsd h
-                     INNER JOIN public.wsdrefine_dem_wsd d
-                     ON ST_Intersects(h.geom, d.geom)
-                     GROUP BY h.{ref_id}
-                  """.format(prelim_wsd_table=prelim_wsd_table,
-                             ref_id=ref_id)
-            db.execute(sql)
+            # process these watersheds later with arcgis
         elif refine_method is None:
             log('Site {w}: inserting unrefined 1st order watershed'.format(w=ref_id_value))
             # just insert the watershed where the point lies *as is*
@@ -313,6 +307,33 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
             log('Site {w}: not inserting 1st order watershed'.format(w=ref_id_value))
 
 
+def arcgis():
+    # use DEM to define area upstream of point within area of interest
+    watersheds_arcgis.generate_new_wsd('wsdrefine_hex_wsd',
+                                       'wsdrefine_streams',
+                                       DEM,
+                                       db=db,
+                                       in_mem=False)
+
+    # The watershed generated with the DEM can be messy. Instead of
+    # using the result of vectorizing the raster watershed, select any
+    # previously generated hex grid cells that intersect with the poly
+    # defined by the DEM. This also ensures any unwanted tails below site
+    # are removed
+    sql = """INSERT INTO {prelim_wsd_table} ({ref_id}, source, geom)
+             SELECT
+               h.{ref_id},
+               'DEM refined' as source,
+               ST_Multi(ST_Union(h.geom)) as geom
+             FROM public.wsdrefine_hex_wsd h
+             INNER JOIN public.wsdrefine_dem_wsd d
+             ON ST_Intersects(h.geom, d.geom)
+             GROUP BY h.{ref_id}
+          """.format(prelim_wsd_table=prelim_wsd_table,
+                     ref_id=ref_id)
+    db.execute(sql)
+
+
 def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
     """
     Insert contributing areas outside of BC into a watersheds table.
@@ -323,6 +344,7 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
     """
     if not db:
         db = fwa.util.connect()
+
 
     # first, process points already loaded to reference table (in BC)
     for fwa_point_event in db[ref_table]:
@@ -364,7 +386,7 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
                         "watershed generated")
 
             # combine the non-bc watersheds and load to postgres
-            #non_bc_watershed = cascaded_union(external_wsd_bnds.values())
+            # non_bc_watershed = cascaded_union(external_wsd_bnds.values())
             for wsd in external_wsd_bnds.values():
                 sql = """
                     INSERT INTO {out_table} ({ref_id}, geom, source)
@@ -381,8 +403,8 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
     # Finally, attempt to process locations outside of BC (not aleady in the ref table)
     sql = """SELECT
                a.{ref_id},
-               ST_X(ST_Transform(a.geom, 4326)) as x,
-               ST_Y(ST_Transform(a.geom, 4326)) as y
+               ST_X(ST_Transform((ST_Dump(a.geom)).geom, 4326)) as x,
+               ST_Y(ST_Transform((ST_Dump(a.geom)).geom, 4326)) as y
              FROM {point_table} a
              LEFT OUTER JOIN {ref_table} b
              ON a.{ref_id} = b.{ref_id}
@@ -418,6 +440,6 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
                 )
                 """.format(out_table=out_table,
                            ref_id=ref_id)
-            db.execute(sql, (ref_id_value, wsd.wkt))
+            db.execute(sql, (location[ref_id], wsd.wkt))
         else:
             log('    - unsupported location, no watershed generated')

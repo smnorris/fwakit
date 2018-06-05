@@ -1,6 +1,5 @@
 -- extract the stream on which the point lies, pulling only the geometry with
 -- a measure greater than the measure of the location
-CREATE TABLE wsdrefine_streams AS
 
 WITH stn_point AS (
   SELECT
@@ -26,6 +25,7 @@ WITH stn_point AS (
 -- get stream at the site location, returning only the gemetry upstream of site
 stream_at_pt AS
 (SELECT
+  e.$ref_id,
   s.linear_feature_id,
   s.blue_line_key,
   s.downstream_route_measure,
@@ -78,9 +78,10 @@ stream_upstream AS
 
 -- return only streams with equivalent watershed code
 
-SELECT linear_feature_id, blue_line_key, geom
+INSERT INTO wsdrefine_streams ($ref_id, linear_feature_id, blue_line_key, geom)
+SELECT $ref_id, linear_feature_id, blue_line_key, ST_Force2D(ST_Multi(geom))
 FROM stream_at_pt
 UNION ALL
-SELECT u.linear_feature_id, u.blue_line_key, u.geom
+SELECT s.$ref_id, u.linear_feature_id, u.blue_line_key, ST_Force2D(ST_Multi(u.geom))
 FROM stream_upstream u
 INNER JOIN stn_point s ON u.wscode_ltree = s.wscode_ltree

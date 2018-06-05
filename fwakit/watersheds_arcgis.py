@@ -135,3 +135,81 @@ def generate_new_wsd(wsdrefine_hex, wsdrefine_streams,
     # load result to postgres db
     db['public.wsdrefine_dem_wsd'].drop()
     db.ogr2pg(temp_wksp, 'wsdrefine_dem_wsd')
+
+
+def wsdrefine_dem(in_wsd, in_streams, wsd_id, dem, out_file, in_mem=True):
+    """
+    Refine a layer of watershed polygons, cutting the bottom boundary where water flows
+    to the bottom of the supplied streams layer.
+
+    - in_wsd:  feature class holding watershed areas to be refined
+    - in_streams: stream upstream of the location at which to terminate the watersheds
+    - wsd_id:  unique id for watershed, present in in_wsd and in_streams
+    """
+    # set a spot to write temp output(s)
+    temp_wksp = os.path.join(tempfile.gettempdir(), 'fwakit', 'fwa_temp.gdb')
+    p, f = os.path.split(temp_wksp)
+    temp_wksp = create_wksp(p, f)
+
+    # get spatial analyst and set env
+    if arcpy.CheckExtension("Spatial") == "Available":
+        arcpy.CheckOutExtension("Spatial")
+    else:
+        raise EnvironmentError('Spatial Analyst license unavailable')
+    arcpy.env.overwriteOutput = True
+    arcpy.env.extent = "MAXOF"
+    if in_mem:
+        arcpy.env.workspace = "IN_MEMORY"
+    else:
+        arcpy.env.workspace = temp_wksp
+
+    # get list of distinct watersheds
+    # (there may be more than one poly per watershed)
+    distinct_ids = set(row[0] for row in arcpy.da.SearchCursor(in_wsd, wsd_id))
+
+    # loop through the distinct watersheds
+    for wsd_id in distinct_ids:
+        arcpy.MakeFeatureLayer(in_streams, 'streams_fl', 'id = wsd_id')
+        arcpy.MakeFeatureLayer(in_wsd, 'wsd_fl', 'id = wsd_id')
+
+        # convert streams to raster
+        if arcpy.Exists('streams_pourpt'):
+            arcpy.Delete_management('streams_pourpt')
+        arcpy.FeatureToRaster_conversion('streams_fl', 'blue_line_key',
+                                         'streams_pourpt', '25')
+
+        # clip DEM to extent of watershed + 250m
+        log('Refining watershed - extracting DEM')
+        extent = arcpy.Describe('wsd_fl').extent
+        expansion = 250
+        xmin = extent.XMin - expansion
+        ymin = extent.YMin - expansion
+        xmax = extent.XMax + expansion
+        ymax = extent.YMax + expansion
+        envelope = (xmin, ymin, xmax, ymax)
+        rectangle = " ".join([str(e) for e in envelope])
+        arcpy.Clip_management(dem, rectangle, 'dem_wsd')
+
+        # output rasters clipped to input wsd poly by creating a mask
+        arcpy.env.mask = 'wsd_fl'
+
+        # fill the dem, calculate flow direction and create watershed raster
+        log('Refining watershed - filling DEM')
+        fill = arcpy.sa.Fill('dem_wsd', 100)
+        flow_direction = arcpy.sa.FlowDirection(fill, 'NORMAL')
+        wsd_grid = arcpy.sa.Watershed(flow_direction, 'streams_pourpt')
+
+        # check to make sure there is a result - if all output raster is null,
+        # do not try to create a watershed polygon output
+        log('Refining watershed - creating new watershed from DEM and streams')
+        out_is_null = arcpy.sa.IsNull(wsd_grid)
+        check_min_result = arcpy.GetRasterProperties_management(out_is_null,
+                                                                "MINIMUM")
+        check_min = check_min_result.getOutput(0)
+        check_max_result = arcpy.GetRasterProperties_management(out_is_null,
+                                                                "MAXIMUM")
+        check_max = check_max_result.getOutput(0)
+        if '0' in (check_min, check_max):
+            arcpy.RasterToPolygon_conversion(wsd_grid, out_file, "SIMPLIFY")
+
+
