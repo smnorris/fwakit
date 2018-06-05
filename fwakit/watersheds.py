@@ -1,4 +1,5 @@
 import json
+import logging as lg
 
 import geojson
 
@@ -213,7 +214,7 @@ def get_refine_method(fwa_point_event, db=None):
         wscode_ltree=str(fwa_point_event['wscode_ltree']),
         localcode_ltree=str(fwa_point_event['localcode_ltree'])
     ).fetchone()
-    log("l_top: %s, l_bottom %s" % (length_to_top, length_to_bottom))
+    log("l_top: %s, l_bottom %s" % (length_to_top, length_to_bottom), level=lg.DEBUG)
     if waterbody_key and (length_to_top > refinement_thresholds['top_with_waterbody']
                           and length_to_bottom > refinement_thresholds['bottom_with_waterbody']):
         return 'CUT'
@@ -275,13 +276,12 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
             db.execute(sql, (ref_id_value,))
 
             # use DEM to define area upstream of point within area of interest
-            """
             watersheds_arcgis.generate_new_wsd('wsdrefine_hex_wsd',
                                                'wsdrefine_streams',
                                                DEM,
                                                db=db,
                                                in_mem=False)
-            """
+
             # The watershed generated with the DEM can be messy. Instead of
             # using the result of vectorizing the raster watershed, select any
             # previously generated hex grid cells that intersect with the poly
@@ -298,7 +298,7 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
                      GROUP BY h.{ref_id}
                   """.format(prelim_wsd_table=prelim_wsd_table,
                              ref_id=ref_id)
-            #db.execute(sql)
+            db.execute(sql)
         elif refine_method is None:
             log('Site {w}: inserting unrefined 1st order watershed'.format(w=ref_id_value))
             # just insert the watershed where the point lies *as is*
