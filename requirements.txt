@@ -1,4 +1,6 @@
 click
-requests
-sqlalchemy
+geojson
 pgdata
+requests
+shapely
+sqlalchemy

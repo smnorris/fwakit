@@ -21,7 +21,7 @@ WITH stn_point AS (
   WHERE e.$ref_id = %s
 )
 
-INSERT INTO public.wsdrefine_prelim ($ref_id, source, geom)
+INSERT INTO $out_table ($ref_id, source, geom)
 
 SELECT
   pt.$ref_id,
