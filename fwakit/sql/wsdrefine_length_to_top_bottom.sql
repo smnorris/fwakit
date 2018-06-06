@@ -26,8 +26,7 @@ WITH ref_point AS (
 
 wsd AS
 (SELECT
-  wsd.watershed_feature_id,
-  wsd.geom
+  ST_Union(wsd.geom) as geom
  FROM whse_basemapping.fwa_watersheds_poly_sp wsd
  INNER JOIN ref_point pt
  ON ST_DWithin(wsd.geom, pt.geom, 5)
@@ -39,7 +38,7 @@ length_to_top AS
 FROM whse_basemapping.fwa_stream_networks_sp str
 INNER JOIN ref_point refpt
   ON str.blue_line_key = refpt.blue_line_key
-  AND str.localcode_ltree = refpt.localcode_ltree
+  AND str.wscode_ltree = refpt.wscode_ltree
 INNER JOIN wsd ON ST_CoveredBy(str.geom, wsd.geom)
 ORDER BY str.downstream_route_measure desc
 LIMIT 1),

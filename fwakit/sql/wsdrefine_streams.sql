@@ -1,5 +1,6 @@
 -- extract the stream on which the point lies, pulling only the geometry with
--- a measure greater than the measure of the location
+-- a measure greater than the measure of the location, and intersecting the watershed
+-- of interest
 
 WITH stn_point AS (
   SELECT
@@ -49,7 +50,8 @@ stream_upstream AS
   FROM stream_at_pt a
   LEFT OUTER JOIN whse_basemapping.fwa_stream_networks_sp b
   ON b.wscode_ltree <@ a.wscode_ltree
-  AND b.localcode_ltree != a.localcode_ltree
+  -- this restriction isn't quite right, it will result in gaps in the stream
+  -- AND b.localcode_ltree != a.localcode_ltree
   AND b.linear_feature_id != a.linear_feature_id
   AND
     CASE
@@ -70,13 +72,13 @@ stream_upstream AS
                NOT b.wscode_ltree <@ a.localcode_ltree)
               OR
               (b.wscode_ltree = a.wscode_ltree
-               AND b.localcode_ltree >= a.localcode_ltree)
+               AND b.localcode_ltree > a.localcode_ltree)
           )
         THEN TRUE
     END
 )
 
--- return only streams with equivalent watershed code
+-- return only streams with equivalent watershed code, in the watershed of interest
 
 INSERT INTO wsdrefine_streams ($ref_id, linear_feature_id, blue_line_key, geom)
 SELECT $ref_id, linear_feature_id, blue_line_key, ST_Force2D(ST_Multi(geom))
@@ -85,3 +87,4 @@ UNION ALL
 SELECT s.$ref_id, u.linear_feature_id, u.blue_line_key, ST_Force2D(ST_Multi(u.geom))
 FROM stream_upstream u
 INNER JOIN stn_point s ON u.wscode_ltree = s.wscode_ltree
+INNER JOIN whse_basemapping.fwa_watersheds_poly_sp w ON ST_Intersects(s.geom, w.geom) AND ST_Intersects(w.geom, u.geom)

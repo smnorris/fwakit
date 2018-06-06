@@ -180,7 +180,7 @@ def get_refine_method(fwa_point_event, db=None):
     """
     refinement_thresholds = {
         'top': 100,
-        'top_with_waterbody': 250,
+        'top_with_waterbody': 50,
         'bottom': 50,
         'bottom_with_waterbody': 100
     }
@@ -210,16 +210,22 @@ def get_refine_method(fwa_point_event, db=None):
         localcode_ltree=str(fwa_point_event['localcode_ltree'])
     ).fetchone()
     log("l_top: %s, l_bottom %s" % (length_to_top, length_to_bottom), level=lg.DEBUG)
-    if waterbody_key and (length_to_top > refinement_thresholds['top_with_waterbody']
-                          and length_to_bottom > refinement_thresholds['bottom_with_waterbody']):
-        return 'CUT'
-    elif not waterbody_key and (length_to_top > refinement_thresholds['top']
-                                and length_to_bottom > refinement_thresholds['bottom']):
-        return 'DEM'
-    elif (length_to_top < refinement_thresholds['top']) or (length_to_bottom < refinement_thresholds['bottom']):
-        return 'SKIP'
-    else:
+    # modify the thresholds if on a waterbody
+    if waterbody_key:
+        refinement_thresholds['top'] = refinement_thresholds['top_with_waterbody']
+        refinement_thresholds['bottom'] = refinement_thresholds['bottom_with_waterbody']
+
+    # first, if the point is less than threshold to top, do not include the watershed
+    if (length_to_top < refinement_thresholds['top']):
+        return 'DROP'
+    # if the point is less than threshold to bottom, do not attempt to refine
+    elif length_to_bottom < refinement_thresholds['bottom']:
         return None
+    # if we are refining, refine based on whether or not point is on waterbody
+    elif waterbody_key:
+        return 'CUT'
+    elif not waterbody_key:
+        return 'DEM'
 
 
 def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
@@ -274,7 +280,8 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
             sql = db.build_query(sql, {'prelim_wsd_table': prelim_wsd_table,
                                        'ref_table': ref_table,
                                        'ref_id': ref_id})
-            db.execute(sql, (ref_id_value,))
+            #db.execute(sql, (ref_id_value,))
+            log('not cutting')
 
         # If not on a waterbody and inside our distance tolerances, refine wsd with DEM
         # to make processing later with arcgis easier, just generate the inputs required
@@ -301,36 +308,34 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
                                  {'ref_table': ref_table,
                                   'ref_id': ref_id,
                                   'out_table': prelim_wsd_table})
-            db.execute(sql, (ref_id_value,))
-        elif refine_method == 'SKIP':
+            #db.execute(sql, (ref_id_value,))
+            log('not inserting')
+        elif refine_method == 'DROP':
             # nothing to do
             log('Site {w}: not inserting 1st order watershed'.format(w=ref_id_value))
 
 
-def arcgis():
-    # use DEM to define area upstream of point within area of interest
-    watersheds_arcgis.generate_new_wsd('wsdrefine_hex_wsd',
-                                       'wsdrefine_streams',
-                                       DEM,
-                                       db=db,
-                                       in_mem=False)
-
+def add_wsdrefine_dem(dem_wsds_table, prelim_wsd_table, ref_id, db=None):
     # The watershed generated with the DEM can be messy. Instead of
     # using the result of vectorizing the raster watershed, select any
     # previously generated hex grid cells that intersect with the poly
     # defined by the DEM. This also ensures any unwanted tails below site
     # are removed
+    if not db:
+        db = fwa.util.connect()
     sql = """INSERT INTO {prelim_wsd_table} ({ref_id}, source, geom)
              SELECT
-               h.{ref_id},
-               'DEM refined' as source,
-               ST_Multi(ST_Union(h.geom)) as geom
-             FROM public.wsdrefine_hex_wsd h
-             INNER JOIN public.wsdrefine_dem_wsd d
-             ON ST_Intersects(h.geom, d.geom)
-             GROUP BY h.{ref_id}
+              h.{ref_id},
+              'DEM refined' as source,
+             ST_Multi(ST_Union(h.geom)) as geom
+            FROM public.wsdrefine_hexwsd h
+            INNER JOIN {dem_wsds_table} d
+            ON h.station = substring(source from 9 for 7)
+            AND ST_Intersects(h.geom, d.geom)
+            GROUP BY h.station
           """.format(prelim_wsd_table=prelim_wsd_table,
-                     ref_id=ref_id)
+                     ref_id=ref_id,
+                     dem_wsds_table=dem_wsds_table)
     db.execute(sql)
 
 
