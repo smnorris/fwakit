@@ -123,11 +123,10 @@ to_split AS
 
 -- Cut the aggregated watershed poly and insert the results into a temp table
 -- for adding to the prelim watersheds
-INSERT INTO $prelim_wsd_table ($ref_id, source, geom)
+INSERT INTO public.wsdrefine_cut ($ref_id, geom)
 
 SELECT
   stream.$ref_id,
-  'wb cut' AS source,
   ST_Multi(ST_Force2d(baz.geom)) AS geom
 FROM
 (SELECT

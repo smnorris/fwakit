@@ -247,8 +247,17 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
     # create intermediate tables, required so that we can process all the DEM refinements
     # in arcgis separately. Ensure the primary key is the right type by selecting from
     # source table.
+    db['public.wsdrefine_cut'].drop()
     db['public.wsdrefine_hexwsd'].drop()
     db['public.wsdrefine_streams'].drop()
+    sql = """CREATE TABLE public.wsdrefine_cut AS
+             SELECT
+               {ref_id},
+               NULL::geometry(MultiPolygon, 3005) as geom
+             FROM {ref_table} LIMIT 0
+          """.format(ref_id=ref_id,
+                     ref_table=ref_table)
+    db.execute(sql)
     sql = """CREATE TABLE public.wsdrefine_hexwsd AS
              SELECT
                {ref_id},
@@ -277,15 +286,24 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
             log('Site {w}: refining watershed - cutting at river'.format(w=ref_id_value))
 
             sql = fwa.queries['wsdrefine_river_wsd_cut']
-            sql = db.build_query(sql, {'prelim_wsd_table': prelim_wsd_table,
-                                       'ref_table': ref_table,
+            sql = db.build_query(sql, {'ref_table': ref_table,
                                        'ref_id': ref_id})
-            #db.execute(sql, (ref_id_value,))
-            log('not cutting')
+            db.execute(sql, (ref_id_value,))
+
+            # check that something valid was created, if the split was unsuccessful use DEM
+            sql = """
+                  SELECT {id}
+                  FROM public.wsdrefine_cut
+                  WHERE {id} = %s
+                  AND ST_IsValid(geom)""".format(id=ref_id)
+            result = db.query(sql, (ref_id_value)).fetchone()
+            if not result[0]:
+                log('Site {w}: could not cut at river, using DEM')
+                refine_method = 'DEM'
 
         # If not on a waterbody and inside our distance tolerances, refine wsd with DEM
         # to make processing later with arcgis easier, just generate the inputs required
-        elif refine_method == 'DEM':
+        if refine_method == 'DEM':
             log('Site {w}: prepping to refine with DEM in ArcGIS'.format(w=ref_id_value))
 
             # create hex cutout of watershed
@@ -299,7 +317,7 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
                                  {'ref_table': ref_table,
                                   'ref_id': ref_id})
             db.execute(sql, (ref_id_value,))
-            # process these watersheds later with arcgis
+
         elif refine_method is None:
             log('Site {w}: inserting unrefined 1st order watershed'.format(w=ref_id_value))
             # just insert the watershed where the point lies *as is*
@@ -309,7 +327,7 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
                                   'ref_id': ref_id,
                                   'out_table': prelim_wsd_table})
             #db.execute(sql, (ref_id_value,))
-            log('not inserting')
+
         elif refine_method == 'DROP':
             # nothing to do
             log('Site {w}: not inserting 1st order watershed'.format(w=ref_id_value))
@@ -356,56 +374,66 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
         ref_id_value = fwa_point_event[ref_id]
 
         # Do areas outside of BC contribute to the point (not including Alaska)
-        non_bc = db.query(
-                          fwa.queries['upstream_border_crossing'],
-                          (str(fwa_point_event['wscode_ltree']),
-                           str(fwa_point_event['localcode_ltree']))
-                         ).fetchall()
-
-        # generate watersheds outside of BC for each stream that crosses the border
-        if non_bc:
-            external_wsd_bnds = {}
-            for border_stream in non_bc:
-                if border_stream['border'] == 'USA_49':
-                    log("Site {site}: processing cross-border stream - {stream}".format(
-                            site=ref_id_value,
-                            stream=str(border_stream['linear_feature_id'])))
-                    comid, measure, index_dist = epa_waters.index_point(
-                                                     border_stream['x'],
-                                                     border_stream['y'],
-                                                     100
-                                                 )
-                    log("    - found USA stream: comid: {com}, measure: {m}".format(
-                        com=comid, m=measure))
-                    wsd = epa_waters.delineate_watershed(
-                        border_stream['linear_feature_id'],
-                        comid,
-                        measure
-                    )
-                    # Convert geojson to shapely object
-                    if wsd:
-                        wsd = shape(geojson.loads(json.dumps(wsd)))
-                        external_wsd_bnds[border_stream['linear_feature_id']] = wsd
-                else:
-                    log("Site {site}: unsupported cross-border stream, no external "
-                        "watershed generated")
-
-            # combine the non-bc watersheds and load to postgres
-            # non_bc_watershed = cascaded_union(external_wsd_bnds.values())
-            for wsd in external_wsd_bnds.values():
-                sql = """
-                    INSERT INTO {out_table} ({ref_id}, geom, source)
-                    VALUES
+        db['public.wsdrefine_borderpts'].drop()
+        db.execute(
+            fwa.queries['upstream_border_crossing'],
+            (str(fwa_point_event['wscode_ltree']),
+             str(fwa_point_event['localcode_ltree']))
+        )
+        border_points = [r for r in db['public.wsdrefine_borderpts'].all()]
+        if len(border_points):
+            # If streams cross border to lower 48, use NHD WBD
+            if border_points[0]['border'] == 'USA_49':
+                log("processing border streams on 49")
+                sql = """WITH RECURSIVE walkup (huc12, geom) AS
                     (
-                     %s,
-                     ST_Multi(ST_Transform(ST_GeomFromText(%s, 4326), 3005)),
-                     'epa_waters'
+                        SELECT huc12, wsd.geom
+                        FROM usgs.wbdhu12 wsd
+                        INNER JOIN public.wsdrefine_borderpts pt
+                        ON ST_Intersects(wsd.geom, pt.geom)
+                        UNION ALL
+                        SELECT b.huc12, b.geom
+                        FROM usgs.wbdhu12 b,
+                        walkup w
+                        WHERE b.tohuc = w.huc12
                     )
-                    """.format(out_table=out_table,
-                               ref_id=ref_id)
-                db.execute(sql, (ref_id_value, wsd.wkt))
+                    INSERT INTO {out_table} ({ref_id}, source, geom)
+                    SELECT
+                      %s AS {ref_id},
+                      'NHD HUC12' AS source,
+                      ST_Union(geom)
+                    FROM walkup
+                """.format(out_table=out_table,
+                           ref_id=ref_id)
+                db.execute(sql, (ref_id_value))
+            else:
+                log("processing border streams not on 49")
+                sql = """WITH RECURSIVE walkup (hybas_id, geom) AS
+                    (
+                        SELECT hybas_id, wsd.geom
+                        FROM hydrosheds.hybas_lev12_v1c wsd
+                        INNER JOIN public.wsdrefine_borderpts pt
+                        ON ST_Intersects(wsd.geom, pt.geom)
+                        UNION ALL
+                        SELECT b.hybas_id, b.geom
+                        FROM hydrosheds.hybas_lev12_v1c b,
+                        walkup w
+                        WHERE b.next_down = w.hybas_id
+                    )
+                    INSERT INTO {out_table} ({ref_id}, source, geom)
+                    SELECT
+                      %s AS {ref_id},
+                      'hybas_na_lev12_v1c' AS source,
+                      ST_Union(geom)
+                    FROM walkup
+                """.format(out_table=out_table,
+                           ref_id=ref_id)
+                db.execute(sql, (ref_id_value))
 
-    # Finally, attempt to process locations outside of BC (not aleady in the ref table)
+
+    # Attempt to process locations outside of BC (not aleady in the ref table)
+    # use the API for this rather than the source data - it cuts off the watershed
+    # at the point.
     sql = """SELECT
                a.{ref_id},
                ST_X(ST_Transform((ST_Dump(a.geom)).geom, 4326)) as x,

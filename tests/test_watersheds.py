@@ -6,9 +6,11 @@ test_points = [(1420528, 652194),  # Pinantan Lake: no refinement, check all wb 
                (1403072, 686047),  # to be refined by cutting
                (1437569, 484291),  # to be refined by cutting
                (1397255, 508884),
-               (1395904, 468799)]
+               (1395904, 468799),
+               (1494176, 638685),
+               (1395817, 468862), # Pasayten (large USA contributing area)]
+               (678173, 1679406)] # Smart River, YT border
                #(1435172, 475689)]  # Ewart Creek (small USA contrib area)
-               #(1395817, 468862),  # Pasayten (large USA contributing area)
                #(1529332, 467655),  # Kettle, just outside of Midway (in USA)
                #(1848955, 503291)]  # Flathead (in USA)
 
@@ -56,6 +58,7 @@ def test_get_refine_method():
     pt = db['public.fwakit_point_test_referenced'].find_one(id=2)
     refine_method = watersheds.get_refine_method(pt, db=db)
     assert refine_method == 'DEM'
+    """
     pt = db['public.fwakit_point_test_referenced'].find_one(id=3)
     refine_method = watersheds.get_refine_method(pt, db=db)
     assert refine_method == 'CUT'
@@ -68,14 +71,21 @@ def test_get_refine_method():
     pt = db['public.fwakit_point_test_referenced'].find_one(id=6)
     refine_method = watersheds.get_refine_method(pt, db=db)
     assert refine_method == 'CUT'
+    pt = db['public.fwakit_point_test_referenced'].find_one(id=7)
+    refine_method = watersheds.get_refine_method(pt, db=db)
+    assert refine_method == 'CUT'
+    pt = db['public.fwakit_point_test_referenced'].find_one(id=8)
+    refine_method = watersheds.get_refine_method(pt, db=db)
+    assert refine_method == 'CUT'
+    """
 
-def test_add_local_watershed():
-    db = fwa.util.connect()
-    watersheds.add_local_watersheds(
-        'public.fwakit_point_test_referenced',
-        'id',
-        'public.fwakit_prelimwsd_test',
-        db=db)
+# def test_add_local_watershed():
+#     db = fwa.util.connect()
+#     watersheds.add_local_watersheds(
+#         'public.fwakit_point_test_referenced',
+#         'id',
+#         'public.fwakit_prelimwsd_test',
+#         db=db)
 
 
 def test_add_ex_bc():
@@ -95,7 +105,6 @@ def test_add_ex_bc():
         'public.fwakit_prelimwsd_exbc_test',
         db=db
     )
-
 
 #def teardown():
 #    db = fwa.util.connect()
