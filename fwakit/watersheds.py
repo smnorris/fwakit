@@ -93,6 +93,7 @@ def points_to_prelim_watersheds(ref_table, ref_id, out_table, dissolve=False, db
         CREATE TEMPORARY TABLE temp_prelim_wsds AS
         SELECT
           pt.{pk},
+          wsd.watershed_feature_id,
           wsd.waterbody_key,
     -- note components of lakes and reservoirs
           CASE
@@ -149,10 +150,14 @@ def points_to_prelim_watersheds(ref_table, ref_id, out_table, dissolve=False, db
 
     # create output table
     sql = """CREATE TABLE {out_table} AS
-    SELECT {pk}, waterbody_key, geom
+    SELECT {pk}, watershed_feature_id, waterbody_key, geom
     FROM temp_prelim_wsds
     UNION
-    SELECT lr.{pk}, lr.waterbody_key, ST_Multi(ST_Force2D(w.geom)) AS geom
+    SELECT
+      lr.{pk},
+      w.watershed_feature_id,
+      lr.waterbody_key,
+      ST_Multi(ST_Force2D(w.geom)) AS geom
     FROM
       (SELECT DISTINCT p.{pk}, p.waterbody_key
        FROM temp_prelim_wsds p
@@ -180,9 +185,9 @@ def get_refine_method(fwa_point_event, db=None):
     """
     refinement_thresholds = {
         'top': 100,
-        'top_with_waterbody': 50,
+        'top_with_waterbody': 0,
         'bottom': 50,
-        'bottom_with_waterbody': 100
+        'bottom_with_waterbody': 0
     }
     if not db:
         db = fwa.util.connect()
@@ -280,16 +285,23 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
         ref_id_value = fwa_point_event[ref_id]
         refine_method = get_refine_method(fwa_point_event)
 
-        # If on waterbody and inside our distance tolerances, cut the watersheds and
-        # insert directly into the prelim watersheds table
+        # If watershed is on a waterbody and inside our distance tolerances, cut it
         if refine_method == 'CUT':
             log('Site {w}: refining watershed - cutting at river'.format(w=ref_id_value))
 
+            # cut the polys
             sql = fwa.queries['wsdrefine_river_wsd_cut']
             sql = db.build_query(sql, {'ref_table': ref_table,
                                        'ref_id': ref_id})
             db.execute(sql, (ref_id_value,))
 
+            # remove the polys that have been cut from the prelim wsd table,
+            # there are more than just the poly in which the point lies
+            sql = fwa.queries['wsdrefine_river_wsd_cut_remove']
+            sql = db.build_query(sql, {'ref_table': ref_table,
+                                       'ref_id': ref_id,
+                                       'prelim': prelim_wsd_table})
+            db.execute(sql, (ref_id_value, ref_id_value))
             # check that something valid was created, if the split was unsuccessful use DEM
             sql = """
                   SELECT {id}
@@ -326,36 +338,44 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
                                  {'ref_table': ref_table,
                                   'ref_id': ref_id,
                                   'out_table': prelim_wsd_table})
-            #db.execute(sql, (ref_id_value,))
+            db.execute(sql, (ref_id_value,))
 
         elif refine_method == 'DROP':
             # nothing to do
             log('Site {w}: not inserting 1st order watershed'.format(w=ref_id_value))
 
 
-def add_wsdrefine_dem(dem_wsds_table, prelim_wsd_table, ref_id, db=None):
-    # The watershed generated with the DEM can be messy. Instead of
-    # using the result of vectorizing the raster watershed, select any
-    # previously generated hex grid cells that intersect with the poly
-    # defined by the DEM. This also ensures any unwanted tails below site
-    # are removed
+def add_wsdrefine(prelim_wsd_table, ref_id, db=None):
+    """
+    Add local watersheds refined by cut method and dem method to the prelim watersheds
+    table
+    """
     if not db:
         db = fwa.util.connect()
+    # watersheds refined by DEM are not always clean. Inserted based on an intersect
+    # with hex polys to tidy them up
     sql = """INSERT INTO {prelim_wsd_table} ({ref_id}, source, geom)
              SELECT
               h.{ref_id},
               'DEM refined' as source,
              ST_Multi(ST_Union(h.geom)) as geom
             FROM public.wsdrefine_hexwsd h
-            INNER JOIN {dem_wsds_table} d
+            INNER JOIN public.wsdrefine_dem d
             ON h.station = substring(source from 9 for 7)
             AND ST_Intersects(h.geom, d.geom)
             GROUP BY h.station
           """.format(prelim_wsd_table=prelim_wsd_table,
-                     ref_id=ref_id,
-                     dem_wsds_table=dem_wsds_table)
+                     ref_id=ref_id)
     db.execute(sql)
-
+    sql = """INSERT INTO {prelim_wsd_table} ({ref_id}, source, geom)
+             SELECT
+              c.{ref_id},
+              'CUT' as source,
+             geom as geom
+            FROM public.wsdrefine_cut c
+          """.format(prelim_wsd_table=prelim_wsd_table,
+                     ref_id=ref_id)
+    db.execute(sql)
 
 def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
     """

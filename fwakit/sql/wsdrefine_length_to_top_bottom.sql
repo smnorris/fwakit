@@ -49,7 +49,7 @@ length_to_bottom AS
 FROM whse_basemapping.fwa_stream_networks_sp str
 INNER JOIN ref_point refpt
   ON str.blue_line_key = refpt.blue_line_key
-  AND str.localcode_ltree = refpt.localcode_ltree
+  AND str.wscode_ltree = refpt.wscode_ltree
 INNER JOIN wsd ON ST_CoveredBy(str.geom, wsd.geom)
 ORDER BY str.downstream_route_measure asc
 LIMIT 1)

@@ -1,7 +1,4 @@
--- For sites that are on double line rivers or canals, extract the watersheds
--- on the waterbody and on the banks of the waterbody adjacent to the site.
--- Then cut these polys from the site location to the closest point on the
--- opposite edge of the bank/adjacent watershed poly
+-- Delete any polygons from prelim table not needed after a cut.
 
 -- Generate a point from the measure of the site location on the stream
 WITH stn_point AS
@@ -76,67 +73,18 @@ AND wsd.watershed_feature_id NOT IN (SELECT watershed_feature_id FROM wsds_river
 wsds_adjacent_nearest AS
 (SELECT DISTINCT ON (riv_id) riv_id, watershed_feature_id, dist_to_site, geom
 FROM wsds_adjacent
-ORDER BY riv_id, dist_to_site),
+ORDER BY riv_id, dist_to_site)
 
--- Extract the exterior ring from wsds_adjacent_nearest and retain only the
--- portion that doesn't intersect with the river polys - the outside edges
-edges AS (SELECT
-   w_adj.watershed_feature_id,
-   ST_Difference(ST_ExteriorRing((ST_Dump(w_adj.geom)).geom), w_riv.geom ) as geom
-FROM wsds_adjacent_nearest w_adj,
-(SELECT ST_Union(geom) as geom FROM wsds_river) as w_riv),
-
--- Find the closest points along edges to the site, this is where we will
--- cut the watersheds
-cut_line_ends AS (SELECT
-  row_number() over() as id,
-  ST_ClosestPoint(edges.geom, stn.geom) as geom
-FROM edges, stn_point stn),
-
--- Build a line between the points and the site itself, creating the cutting
--- blade. Make sure the points are ordered correctly when building the line.
-blade AS (
-SELECT 1 as id, ST_MakeLine(geom) geom FROM
-(SELECT
-  CASE WHEN id = 2 THEN 3
-  ELSE id
-  END AS id,
-  geom
-FROM cut_line_ends
-UNION ALL
-SELECT 2 AS id, geom FROM stn_point
-ORDER BY id) as orderedpts),
-
---- Aggregate the watersheds extracted above (river and nearest adjacent) into
--- a single poly for cutting. Insert other nearby waterbodies in case we are
--- missing part of the river when sharp angles get involved
-to_split AS
-(SELECT (ST_Dump(ST_Union(geom))).geom AS geom FROM
-(SELECT geom FROM wsds_adjacent_nearest
+--- Remove the watersheds extracted above (river and nearest adjacent),
+--- they are re-inserted after the cut
+DELETE FROM $prelim
+WHERE watershed_feature_id IN
+(SELECT watershed_feature_id FROM wsds_adjacent_nearest
  UNION ALL
- SELECT geom FROM wsds_river
+ SELECT watershed_feature_id FROM wsds_river
  UNION ALL
- SELECT wsd.geom FROM whse_basemapping.fwa_watersheds_poly_sp wsd
+ SELECT watershed_feature_id FROM whse_basemapping.fwa_watersheds_poly_sp wsd
  INNER JOIN stn_point pt
  ON ST_DWithin(wsd.geom, pt.geom, 100)
- WHERE wsd.waterbody_key != 0) AS bar)
-
--- Cut the aggregated watershed poly and insert the results into a temp table
--- for adding to the prelim watersheds
-INSERT INTO public.wsdrefine_cut ($ref_id, geom)
-
-SELECT
-  stream.$ref_id,
-  ST_Multi(ST_Force2d(baz.geom)) AS geom
-FROM
-(SELECT
- (ST_Dump(ST_Split(ST_Snap(w.geom, b.geom, .001), b.geom))).geom
-FROM to_split w, blade b) AS baz
-INNER JOIN
-(SELECT p.$ref_id, str.geom FROM whse_basemapping.fwa_stream_networks_sp str
- INNER JOIN stn_point p
- ON str.blue_line_key = p.blue_line_key
- AND str.downstream_route_measure > p.downstream_route_measure
- ORDER BY str. downstream_route_measure asc
- LIMIT 1) stream
- ON st_intersects(baz.geom, stream.geom)
+ WHERE wsd.waterbody_key != 0)
+AND $ref_id = %s
