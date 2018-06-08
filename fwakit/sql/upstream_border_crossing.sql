@@ -9,6 +9,8 @@
 -- - it could be valuable to manually QA the results and generate a lookup of all
 --   BC streams that exit the province rather than approximating in this way
 
+CREATE TABLE public.wsdrefine_borderpts AS
+
 with borders_approx AS
 (SELECT
   'USA_49' as border,
@@ -33,7 +35,7 @@ SELECT
     3005)
    AS geom
 FROM (SELECT
-        generate_series(-139.05, -120.00, -.01) AS x,
+        generate_series(-139.05, -120.00, .01) AS x,
         59.9995 AS y) AS segments
 
 UNION ALL
@@ -62,11 +64,13 @@ INNER JOIN borders_approx  b
 ON ST_Intersects(s.geom, b.geom)
 WHERE FWA_UpstreamWSC(%s::ltree, %s::ltree, s.wscode_ltree, s.localcode_ltree))
 
+
 SELECT
  border,
  linear_feature_id,
  ST_X(ST_Transform(geom, 4326)) as x,
- ST_Y(ST_Transform(geom, 4326)) as y
+ ST_Y(ST_Transform(geom, 4326)) as y,
+ geom
 FROM intersections
 
 
