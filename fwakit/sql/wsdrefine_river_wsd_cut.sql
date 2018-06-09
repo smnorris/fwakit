@@ -9,6 +9,7 @@ WITH stn_point AS
   e.$ref_id,
   e.blue_line_key,
   e.downstream_route_measure,
+  e.linear_feature_id,
   s.waterbody_key,
   ST_LineInterpolatePoint(ST_LineMerge(s.geom), ROUND(CAST((e.downstream_route_measure - s.downstream_route_measure) / s.length_metre AS NUMERIC), 5)) AS geom
   FROM $ref_table e
@@ -32,7 +33,7 @@ wsds_river_prelim AS
  INNER JOIN stn_point pt
   ON (wsd.waterbody_key = pt.waterbody_key
      AND ST_DWithin(wsd.geom, pt.geom, 100))
-     ),
+),
 
 -- add intersecting waterbodies if present, combining with results from above
 wsds_river AS
@@ -78,34 +79,80 @@ wsds_adjacent_nearest AS
 FROM wsds_adjacent
 ORDER BY riv_id, dist_to_site),
 
--- Extract the exterior ring from wsds_adjacent_nearest and retain only the
+-- Extract the (valid) exterior ring from wsds_adjacent_nearest and retain only the
 -- portion that doesn't intersect with the river polys - the outside edges
-edges AS (SELECT
-   w_adj.watershed_feature_id,
-   ST_Difference(ST_ExteriorRing((ST_Dump(w_adj.geom)).geom), w_riv.geom ) as geom
-FROM wsds_adjacent_nearest w_adj,
+edges AS (
+  SELECT
+  w_adj.watershed_feature_id,
+  ST_Difference(
+    ST_ExteriorRing(
+      ST_MakeValid(
+        (ST_Dump(w_adj.geom)).geom
+      )
+    ),
+    w_riv.geom
+  ) as geom
+  FROM wsds_adjacent_nearest w_adj,
 (SELECT ST_Union(geom) as geom FROM wsds_river) as w_riv),
 
--- Find the closest points along edges to the site, this is where we will
--- cut the watersheds
-cut_line_ends AS (SELECT
-  row_number() over() as id,
-  ST_ClosestPoint(edges.geom, stn.geom) as geom
-FROM edges, stn_point stn),
+-- build all possible blades because the shortest may not work
+-- the shortest edge may cross the waterbody before getting to the site, resulting
+-- in an invalid blade
+all_ends AS (
+  SELECT
+    row_number() over() AS id,
+    e.watershed_feature_id,
+    (ST_DumpPoints(e.geom)).geom as geom_end,
+    stn.blue_line_key,
+    stn.geom as geom_stn
+  FROM edges e, stn_point stn
+),
 
--- Build a line between the points and the site itself, creating the cutting
--- blade. Make sure the points are ordered correctly when building the line.
-blade AS (
-SELECT 1 as id, ST_MakeLine(geom) geom FROM
+-- build all possible blades to see which ones don't cross the river
+all_blade_edges AS (
+  SELECT
+    e.id,
+    e.blue_line_key,
+    ST_Makeline(geom_end, geom_stn) as geom
+  FROM all_ends e),
+
+-- buffer the stream for use below, the buffer ensures that intersections occur,
+-- otherwise precision errors may occur when intersecting the point with the line end
+stream_buff AS (
+SELECT ST_Union(ST_Buffer(ST_LineMerge(s.geom), .01)) as geom
+FROM whse_basemapping.fwa_stream_networks_sp s
+INNER JOIN stn_point p ON s.blue_line_key = p.blue_line_key
+),
+
+-- find the shortest of the blades that do not cross the river
+shortest_valid_edges AS (
+SELECT DISTINCT ON (id)
+    e.id,
+    ST_Length(e.geom) AS length,
+    e.geom
+  FROM all_blade_edges e
+  INNER JOIN stream_buff s ON ST_Intersects(e.geom, s.geom)
+  AND ST_GeometryType(ST_Intersection(e.geom, s.geom)) = 'ST_LineString'
+  ORDER BY id, length
+),
+
+-- Now we can construct a valid blade.
+-- One of the lines has to be flipped for the line to build properly
+blade AS
 (SELECT
-  CASE WHEN id = 2 THEN 3
-  ELSE id
-  END AS id,
-  geom
-FROM cut_line_ends
-UNION ALL
-SELECT 2 AS id, geom FROM stn_point
-ORDER BY id) as orderedpts),
+  1 as id,
+  ST_LineMerge(ST_Collect(geom)) as geom
+FROM (
+  SELECT
+    id,
+    ST_Reverse(geom) as geom
+  FROM shortest_valid_edges
+  WHERE id = 1
+  UNION ALL
+  SELECT id, geom
+  FROM shortest_valid_edges
+  WHERE id = 2) as flipped
+),
 
 --- Aggregate the watersheds extracted above (river and nearest adjacent) into
 -- a single poly for cutting. Insert other nearby waterbodies in case we are
@@ -123,6 +170,7 @@ to_split AS
 
 -- Cut the aggregated watershed poly and insert the results into a temp table
 -- for adding to the prelim watersheds
+
 INSERT INTO public.wsdrefine_cut ($ref_id, geom)
 
 SELECT
