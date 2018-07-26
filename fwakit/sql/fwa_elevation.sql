@@ -1,3 +1,5 @@
+-- Return the elevation of a stream at a point
+-- Point is defined by blue_line_key and downstream_route_measure
 
 CREATE OR REPLACE FUNCTION fwa_elevation(
     blkey integer,
