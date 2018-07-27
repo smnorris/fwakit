@@ -19,6 +19,7 @@ setup(name='fwakit',
       version=version,
       description=u"Python / PostgreSQL tools for working with BC Freshwater Atlas",
       long_description=read('README.md'),
+      long_description_content_type='text/markdown',
       classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
