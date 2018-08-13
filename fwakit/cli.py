@@ -153,8 +153,8 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
                                   dim=3)
                         # combine the groups into a single table
                         if i == 0:
-                            sql = '''CREATE TABLE whse_basemapping.{table} AS
-                                     SELECT * FROM whse_basemapping.{g} LIMIT 0
+                            sql = '''CREATE TABLE whse_basemapping.{table} 
+                                     (LIKE whse_basemapping.{g})
                                   '''.format(table=layer['table'],
                                              g=layer['table']+'_'+group.lower())
                             db.execute(sql)
@@ -217,11 +217,9 @@ def clean(layers, skiplayers, db_url):
             # create indexes on columns noted in parameters
             for column in layer['index_fields']:
                 db[table].create_index([column])
-            # re-create geometry index
-            #if 'geom' in db[table].columns:
-            #    db.execute('DROP INDEX IF EXISTS {t}_geom_geom_idx'
-            #               .format(t=layer['table']))
-            #    db[table].create_index_geom()
+            # create geometry index for tables loaded by group
+            if layer['grouped']:
+                db[table].create_index_geom()
             # index watershed codes
             for col in ['fwa_watershed_code', 'local_watershed_code']:
                 if col in db[table].columns:
