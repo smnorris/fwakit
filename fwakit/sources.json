@@ -61,6 +61,17 @@
       "id":"waterbody_poly_id"
    },
    {
+      "alias":"islands",
+      "index_fields":[
+         "gnis_name_1",
+         "gnis_name_2"
+      ],
+      "grouped":false,
+      "source_file":"FWA_BC.gdb.zip",
+      "table":"fwa_islands_poly",
+      "id":"island_id"
+   },
+   {
       "alias":"lakes",
       "index_fields":[
          "blue_line_key",
