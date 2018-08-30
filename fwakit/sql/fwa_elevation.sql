@@ -15,11 +15,11 @@ RETURNS numeric AS $$
 
 WITH segment AS
 (SELECT
-  ((measure - downstream_route_measure) / length_metre) AS pct_seg,
+  ROUND(((measure - downstream_route_measure) / length_metre)::numeric, 5) AS pct_seg,
   ST_LineMerge(geom) as geom
 FROM whse_basemapping.fwa_stream_networks_sp
 WHERE blue_line_key = blkey
-AND blue_line_key = watershed_key
+--AND blue_line_key = watershed_key
 AND downstream_route_measure <= measure
 ORDER BY downstream_route_measure desc
 LIMIT 1)

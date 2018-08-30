@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS whse_basemapping.fwa_watershed_groups_subdivided;
 CREATE TABLE whse_basemapping.fwa_watershed_groups_subdivided
 (fwa_watershed_groups_subdivided_id SERIAL PRIMARY KEY,
 watershed_group_code text,
-geom geometry);
+geom geometry(POLYGON, 3005));
 
 INSERT INTO whse_basemapping.fwa_watershed_groups_subdivided
 (watershed_group_code, geom)
