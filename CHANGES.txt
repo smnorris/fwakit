@@ -3,11 +3,17 @@ Changes
 
 All issue numbers are relative to https://github.com/smnorris/fwakit/issues.
 
-0.0.1b (2018-02-27)
+0.0.1b (2018-09-05)
 ------------------
+- add new functions for slope analysis: `fwa_slope`, `fwa_streamslope`, `fwa_slopewindow`
+- add new function `fwa_elevation`
+- include load of table `fwa_islands_poly` to database
+- explicitly define geometry types in derived tables so ArcGIS does not complain
+- add missing geometry indexes (#14)
+- add functions for creating watershed upstream of points
 - expand on examples
-- add preliminary watershed generation functions
 
-0.0.1a (2018-01-)
+
+0.0.1a (2018-01-19)
 ------------------
 Python/PostgreSQL tools for working with the BC Freshwater Atlas
