@@ -19,6 +19,13 @@ SIMPLE_FILE = 'FWA_BC.gdb.zip'
 SIMPLE_LAYER = 'fwa_lakes_poly'
 
 
+def setup():
+    runner = CliRunner()
+    runner.invoke(cli, ['create_db', '-db', DB_URL])
+    db = fwa.util.connect(DB_URL)
+    assert 'public.spatial_ref_sys' in db.tables
+    
+
 def test_setUp():
     db = fwa.util.connect(DB_URL)
     db.create_schema('whse_basemapping')
