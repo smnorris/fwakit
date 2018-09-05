@@ -90,24 +90,6 @@ def test_get_refine_method():
 #         db=db)
 
 
-def test_add_ex_bc():
-    db = fwa.util.connect()
-    db['public.fwakit_prelimwsd_exbc_test'].drop()
-    db.execute(
-        """
-        CREATE TABLE
-          public.fwakit_prelimwsd_exbc_test
-          (id integer, geom geometry, source text)
-        """
-    )
-    watersheds.add_ex_bc(
-        'public.fwakit_point_test',
-        'public.fwakit_point_test_referenced',
-        'id',
-        'public.fwakit_prelimwsd_exbc_test',
-        db=db
-    )
-
 #def teardown():
 #    db = fwa.util.connect()
 #    db['public.fwakit_point_test'].drop()
