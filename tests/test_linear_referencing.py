@@ -61,16 +61,3 @@ def test_fwa_lengthupstream():
              FROM pts"""
     r = db.query(sql)
     assert round(r.fetchone()[0]) == 1483
-
-
-def test_length_to_top_wsd():
-    # simple case, just one line to measure
-    blue_line_key = 354148454
-    measure = 100
-    db = fwa.util.connect(DB_URL)
-    assert round(fwa.length_to_top_wsd(blue_line_key, measure, db)) == 1366
-    # several lines
-    blue_line_key = 354136084
-    measure = 1200
-    db = fwa.util.connect(DB_URL)
-    assert round(fwa.length_to_top_wsd(blue_line_key, measure, db)) == 1279
