@@ -3,6 +3,10 @@ Changes
 
 All issue numbers are relative to https://github.com/smnorris/fwakit/issues.
 
+0.0.1c (2018-09-09)
+------------------
+- fix `fwa.create_geom_from_events`
+
 0.0.1b (2018-09-05)
 ------------------
 - add new functions for slope analysis: `fwa_slope`, `fwa_streamslope`, `fwa_slopewindow`

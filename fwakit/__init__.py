@@ -4,4 +4,4 @@ from . import util
 tables, aliases = util.get_shortcuts()
 
 
-__version__ = "0.0.1b"
+__version__ = "0.0.1c"
