@@ -158,10 +158,10 @@ def reference_points(point_table, point_id, out_table, threshold=100, closest=Fa
     return out_table
 
 
-def create_geom_from_events(self,
-                            in_table,
+def create_geom_from_events(in_table,
                             out_table,
-                            geom_type=None):
+                            geom_type=None,
+                            db=None):
     '''
     Copy input event table, adding and populating a geometry field
     corresponding to the event measures
@@ -173,27 +173,27 @@ def create_geom_from_events(self,
     note that point output untested.
     '''
     # overwrite the table if it already exists
-    self.db[out_table].drop()
+    if not db:
+        db = util.connect()
+    db[out_table].drop()
     # if not specified, determine if events are point or line
     # line events have length_metre
     for req_column in ["blue_line_key", "downstream_route_measure"]:
-        if req_column not in self.db[in_table].columns:
+        if req_column not in db[in_table].columns:
             raise ValueError("Column {c} does not exist".format(c=req_column))
     if not geom_type:
-        if "length_metre" in self.db[in_table].columns:
+        if "length_metre" in db[in_table].columns:
             geom_type = "LINE"
         else:
             geom_type = "POINT"
     if geom_type == "POINT":
-        sql = self.queries["events_to_points"]
+        sql = fwa.queries["events_to_points"]
     if geom_type == 'LINE':
-        sql = self.queries["events_to_lines"]
+        sql = fwa.queries["events_to_lines"]
     if geom_type not in ["POINT", "LINE"]:
         raise ValueError('create_geom_from_events: geomType must be POINT or LINE')
     # modify query string with input/output table names
-    query = self.db.build_query(sql, {"outputTable": out_table,
-                                      "inputTable": in_table})
-    self.db.execute(query)
+    query = db.build_query(sql, {"outputTable": out_table,
+                                 "inputTable": in_table})
+    db.execute(query)
     return True
-
-
