@@ -21,6 +21,7 @@ WITH candidates AS
     nn.length_metre,
     nn.downstream_route_measure,
     nn.distance_to_stream,
+    nn.watershed_group_code,
     ST_LineMerge(nn.geom) AS geom
   FROM $point_table as pt
   CROSS JOIN LATERAL
@@ -33,6 +34,7 @@ WITH candidates AS
      str.blue_line_key,
      str.length_metre,
      str.downstream_route_measure,
+     str.watershed_group_code,
      str.geom,
      ST_Distance(str.geom, pt.geom) as distance_to_stream
     FROM whse_basemapping.fwa_stream_networks_sp AS str
@@ -64,7 +66,8 @@ SELECT
                        ST_ClosestPoint(candidates.geom, pts.geom))
      * candidates.length_metre) + candidates.downstream_route_measure
     AS downstream_route_measure,
-  candidates.distance_to_stream
+  candidates.distance_to_stream,
+  candidates.watershed_group_code
 FROM bluelines
 INNER JOIN candidates ON bluelines.$point_id = candidates.$point_id
 AND bluelines.blue_line_key = candidates.blue_line_key
