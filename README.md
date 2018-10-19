@@ -20,17 +20,17 @@ MacOS/Linux etc:
 Windows:
 `SET FWA_DB="postgresql://postgres:postgres@localhost:5432/fwadb"`
 
-For more configuration, see `settings.py`. 
+For more configuration, see `settings.py`.
 
 ## Setup
 
-Get FWA data from GeoBC:  
+Get FWA data from GeoBC:
 
 `$ fwakit download`
 
 Note that the download may not work if you are behind a network proxy. If it fails, manually download and unzip the files of interest from [DataBC's ftp server](ftp://ftp.geobc.gov.bc.ca/sections/outgoing/bmgs/FWA_Public).
 
-Create db, load FWA data, repair, index, and optimize:  
+Create db, load FWA data, repair, index, and optimize:
 
 ```
 $ fwakit create_db
@@ -49,7 +49,7 @@ import fwakit as fwa
 
 wsg = fwa.list_groups()
 
-fwa.create_events_from_points('point_table', 'point_id', 'event_table', 10)
+fwa.reference_points('point_table', 'point_id', 'event_table', 10)
 
 ```
 
@@ -63,7 +63,7 @@ fwakit_test=# SELECT fwa_upstreamlength(354136754, 1200) / 1000 as downstream_km
 (1 row)
 ```
 
-#### Use `fwakit` command line interface for common tasks:  
+#### Use `fwakit` command line interface for common tasks:
 
 ```
 $ fwakit --help
