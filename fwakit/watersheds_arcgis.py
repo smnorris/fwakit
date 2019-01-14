@@ -9,7 +9,6 @@ import arcpy
 
 import bcdata
 
-import fwakit as fwa
 from fwakit.util import log
 
 
