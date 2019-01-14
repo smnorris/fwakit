@@ -7,6 +7,8 @@ except ImportError:
 
 import arcpy
 
+import bcdata
+
 import fwakit as fwa
 from fwakit.util import log
 
@@ -22,7 +24,7 @@ def create_wksp(path, gdb):
     return os.path.join(path, gdb)
 
 
-def wsdrefine_dem(in_wsd, in_streams, wsd_id, dem, in_mem=True):
+def wsdrefine_dem(in_wsd, in_streams, wsd_id, in_mem=True):
     """
     Refine a layer of watershed polygons, cutting the bottom boundary where water flows
     to the bottom of the supplied streams layer.
@@ -32,7 +34,8 @@ def wsdrefine_dem(in_wsd, in_streams, wsd_id, dem, in_mem=True):
     - wsd_id:  unique id for watershed, present in in_wsd and in_streams
     """
     # set a spot to write temp output(s)
-    temp_wksp = os.path.join(tempfile.gettempdir(), 'fwakit', 'fwa_temp.gdb')
+    temp_folder = os.path.join(tempfile.gettempdir(), 'fwakit')
+    temp_wksp = os.path.join(temp_folder, 'fwa_temp.gdb')
     p, f = os.path.split(temp_wksp)
     temp_wksp = create_wksp(p, f)
 
@@ -96,21 +99,21 @@ def wsdrefine_dem(in_wsd, in_streams, wsd_id, dem, in_mem=True):
         arcpy.FeatureToRaster_conversion('streams_fl', 'bllnk',
                                          'streams_pourpt', '25')
 
-        # clip DEM to extent of watershed + 250m
+        # get DEM
         log('  - extracting DEM')
         expansion = 250
         xmin = extent.XMin - expansion
         ymin = extent.YMin - expansion
         xmax = extent.XMax + expansion
         ymax = extent.YMax + expansion
-        envelope = (xmin, ymin, xmax, ymax)
-        rectangle = " ".join([str(e) for e in envelope])
+        bounds = (xmin, ymin, xmax, ymax)
+        #rectangle = " ".join([str(e) for e in envelope])
         #log(rectangle)
-        arcpy.Clip_management(dem, rectangle, 'dem_wsd')
-
+        #arcpy.Clip_management(dem, rectangle, 'dem_wsd')
+        bcdata.dem(bounds, os.path.join(temp_folder, "dem_wsd.tif"))
         # fill the dem, calculate flow direction and create watershed raster
         log('  - filling DEM')
-        fill = arcpy.sa.Fill('dem_wsd', 100)
+        fill = arcpy.sa.Fill(os.path.join(temp_folder, "dem_wsd.tif"), 100)
         #fill.save(r"T:\fwakit\fl_"+wsd_id_value)
         log('  - calculating flow direction')
         flow_direction = arcpy.sa.FlowDirection(fill, 'NORMAL')
