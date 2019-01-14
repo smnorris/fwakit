@@ -110,7 +110,7 @@ def wsdrefine_dem(in_wsd, in_streams, wsd_id, in_mem=True):
         #rectangle = " ".join([str(e) for e in envelope])
         #log(rectangle)
         #arcpy.Clip_management(dem, rectangle, 'dem_wsd')
-        bcdata.dem(bounds, os.path.join(temp_folder, "dem_wsd.tif"))
+        bcdata.get_dem(bounds, os.path.join(temp_folder, "dem_wsd.tif"))
         # fill the dem, calculate flow direction and create watershed raster
         log('  - filling DEM')
         fill = arcpy.sa.Fill(os.path.join(temp_folder, "dem_wsd.tif"), 100)
