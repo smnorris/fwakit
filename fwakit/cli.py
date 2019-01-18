@@ -153,7 +153,7 @@ def load(layers, skiplayers, dl_path, db_url, wsg):
                                   dim=3)
                         # combine the groups into a single table
                         if i == 0:
-                            sql = '''CREATE TABLE whse_basemapping.{table} 
+                            sql = '''CREATE TABLE whse_basemapping.{table}
                                      (LIKE whse_basemapping.{g})
                                   '''.format(table=layer['table'],
                                              g=layer['table']+'_'+group.lower())
@@ -264,6 +264,8 @@ def clean(layers, skiplayers, db_url):
     # create text_pattern_pos indexes on watershed codes
     # (these aren't included in sources.json indexes as index type is required)
 
+    # add CDB_MakeHexagon function
+    db.execute(fwa.queries['CDB_MakeHexagon'])
 
 
 @cli.command()
