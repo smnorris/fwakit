@@ -1,16 +1,36 @@
 import json
 import logging as lg
 
-import geojson
-
 from sqlalchemy import text
 
-from shapely.geometry import shape
-from shapely.ops import cascaded_union
+from skimage.morphology import skeletonize
+from scipy import ndimage
+import numpy as np
 
+import geojson
+import pyproj
+import fiona
+from rasterio import features
+from shapely import geometry, ops
+from pysheds.grid import Grid
+
+import bcdata
 import fwakit as fwa
 from fwakit import epa_waters
 from fwakit.util import log
+
+
+def filter_bounds(in_file, prop, val):
+    with fiona.open(in_file) as src:
+        filtered = filter(lambda f: f['properties'][prop]==val, src)
+        xs = []
+        ys = []
+        for j, feat in enumerate(filtered):
+            w, s, e, n = fiona.bounds(feat)
+            xs.extend([w, e])
+            ys.extend([s, n])
+        w, s, e, n = (min(xs), min(ys), max(xs), max(ys))
+        return[w, s, e, n]
 
 
 def points_to_watersheds(ref_table, ref_id, out_table, dissolve=False, db=None):
@@ -316,7 +336,7 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
         # If not on a waterbody and inside our distance tolerances, refine wsd with DEM
         # to make processing later with arcgis easier, just generate the inputs required
         if refine_method == 'DEM':
-            log('Site {w}: prepping to refine with DEM in ArcGIS'.format(w=ref_id_value))
+            log('Site {w}: prepping to refine with DEM'.format(w=ref_id_value))
 
             # create hex cutout of watershed
             sql = db.build_query(fwa.queries['wsdrefine_hexwsd'],
@@ -345,6 +365,130 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
             log('Site {w}: not inserting 1st order watershed'.format(w=ref_id_value))
 
 
+def wsdrefine_dem(in_wsds, in_streams, in_points, ref_id):
+    """Refine provided watersheds by using DEM
+    """
+    # find unique IDs in hex watershed shapefile
+
+    with fiona.open(in_wsds) as src:
+        id_type = src.schema['properties'][ref_id]
+        stations = sorted(list(set([f['properties'][ref_id] for f in src])))
+
+        schema = {
+            'geometry': 'Polygon',
+            'properties': {ref_id: id_type}
+        }
+
+        # create destination shapefile and open
+        with fiona.open('data/wsdrefine_dem.shp', 'w', driver='ESRI Shapefile', crs=src.crs, schema=schema) as dst:
+            # loop through each watershed, insert new catchment
+            for station_id in stations:
+                log("Refining watershed for point {}".format(station_id))
+                bounds = filter_bounds(in_wsds, ref_id, station_id)
+                pourpoint_coord = filter_bounds(in_points, ref_id, station_id)[0:2]
+                # more than one polygon can be returned (and rasterio.shapes does
+                # not return multipolygons - dump each to file and handle
+                # aggregation elsewhere because some features seem to crash python
+                # even when valid
+                catchment_polys = create_catchment(ref_id, station_id, pourpoint_coord, bounds)
+                for catchment in catchment_polys:
+                    rec = {}
+                    rec['geometry'] = geometry.mapping(catchment)
+                    rec['id'] = str(station_id)
+                    rec['properties'] = {ref_id: station_id}
+                    dst.write(rec)
+
+
+def create_catchment(id_column, id_value, pourpoint_coord, bounds):
+    """Delineate catchment within provided bounds, upstream of provided point
+    """
+
+    # expand provided bounds by 250m on each side
+    expansion = 250
+    xmin = bounds[0] - expansion
+    ymin = bounds[1] - expansion
+    xmax = bounds[2] + expansion
+    ymax = bounds[3] + expansion
+    expanded_bounds = (xmin, ymin, xmax, ymax)
+
+    bcdata.get_dem(expanded_bounds, "dem.tif")
+
+    grid = Grid.from_raster("dem.tif", data_name='dem')
+
+    # load FWA streams within area of interest and rasterize
+    with fiona.open("data/wsdrefine_streams.shp") as src:
+        stream_features = list(filter(lambda f: f['properties'][id_column] == id_value, src))
+
+    # convert stream geojson features to shapely shapes
+    stream_shapes = [geometry.shape(f['geometry']) for f in stream_features]
+
+    # convert shapes to raster
+    stream_raster = features.rasterize(
+        ((g, 1) for g in stream_shapes),
+        out_shape=grid.shape,
+        transform=grid.affine,
+        all_touched=False
+    )
+    stream_raster = skeletonize(stream_raster).astype(np.uint8)
+
+    # Create boolean mask based on rasterized river shapes
+    mask = stream_raster.astype(np.bool)
+
+    # Create a view onto the DEM array
+    dem = grid.view('dem', dtype=np.float64, nodata=np.nan)
+
+    # Blur mask using a gaussian filter
+    blurred_mask = ndimage.filters.gaussian_filter(mask.astype(np.float64), sigma=2.5)
+
+    # Set central channel to max to prevent pits
+    blurred_mask[mask.astype(np.bool)] = blurred_mask.max()
+
+    # Set elevation change for burned cells
+    dz = 16.5
+
+    # Set mask to blurred mask
+    mask = blurred_mask
+
+    # Create a view onto the DEM array
+    dem = grid.view('dem', dtype=np.float64, nodata=np.nan)
+
+    # Subtract dz where mask is nonzero
+    dem[(mask > 0)] -= dz*mask[(mask > 0)]
+
+    # Smooth the mask in an effort to make sure the DEM goes downhill
+    # where the stream is present
+    #dem[(mask > 0)] = ndimage.filters.minimum_filter(dem, 2)[(mask > 0)]
+
+    # defining the crs used improves results
+    new_crs = pyproj.Proj('+init=epsg:3005')
+
+    #         N    NE    E    SE    S    SW    W    NW
+    dirmap = (64,  128,  1,   2,    4,   8,    16,  32)
+
+    # fill / resolve flats / flow direction / accumulation
+    grid.fill_depressions(data=dem, out_name='flooded_dem')
+    grid.resolve_flats(data='flooded_dem', out_name='inflated_dem')
+    grid.flowdir(data='inflated_dem', out_name='dir', dirmap=dirmap, as_crs=new_crs)
+    grid.accumulation(data='dir', dirmap=dirmap, out_name='acc', apply_mask=False)
+
+    # snap pour point to higher accumulation cells
+    # (in theory, this shouldn't really be necesssary after burning in the
+    # streams, but the DEM and streams are not exact matches)
+    x, y = pourpoint_coord
+    xy_snapped = grid.snap_to_mask(grid.acc > 50, [[x, y]], return_dist=False)
+    x, y = xy_snapped[0][0], xy_snapped[0][1]
+
+    # create catchment
+    grid.catchment(data='dir', x=x, y=y, dirmap=dirmap, out_name='catch',
+                   recursionlimit=15000, xytype='label', nodata_out=0)
+
+    # Clip the bounding box to the catchment
+    grid.clip_to('catch')
+
+    # polygonize and return a list of polygon shapely objects
+    return [geometry.shape(shape) for shape, value in grid.polygonize()]
+
+
 def add_wsdrefine(prelim_wsd_table, ref_id, db=None):
     """
     Add local watersheds refined by cut method and dem method to the prelim watersheds
@@ -361,9 +505,9 @@ def add_wsdrefine(prelim_wsd_table, ref_id, db=None):
              ST_Multi(ST_Union(h.geom)) as geom
             FROM public.wsdrefine_hexwsd h
             INNER JOIN public.wsdrefine_dem d
-            ON h.station = substring(source from 9 for 7)
+            ON h.{ref_id} = d.{ref_id}
             AND ST_Intersects(h.geom, d.geom)
-            GROUP BY h.station
+            GROUP BY h.{ref_id}
           """.format(prelim_wsd_table=prelim_wsd_table,
                      ref_id=ref_id)
     db.execute(sql)
@@ -376,6 +520,7 @@ def add_wsdrefine(prelim_wsd_table, ref_id, db=None):
           """.format(prelim_wsd_table=prelim_wsd_table,
                      ref_id=ref_id)
     db.execute(sql)
+
 
 def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
     """
@@ -482,7 +627,7 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
         )
         # Convert geojson to shapely object then insert into db
         if wsd:
-            wsd = shape(geojson.loads(json.dumps(wsd)))
+            wsd = geometry.shape(geojson.loads(json.dumps(wsd)))
             sql = """
                 INSERT INTO {out_table} ({ref_id}, geom, source)
                 VALUES
