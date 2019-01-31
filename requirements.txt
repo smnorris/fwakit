@@ -5,3 +5,5 @@ pgdata
 requests
 shapely
 sqlalchemy
+psycopg2
+pysheds
