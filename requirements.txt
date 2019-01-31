@@ -7,3 +7,6 @@ shapely
 sqlalchemy
 psycopg2
 pysheds
+numpy
+scipy
+scikit-image
