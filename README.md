@@ -3,9 +3,9 @@
 Python/PostgreSQL tools for working with British Columbia's [Freshwater Atlas](https://www2.gov.bc.ca/gov/content/data/geographic-data-services/topographic-data/freshwater)
 
 ## Requirements
-- Python 2.7+ (tested with 2.7.14, 3.6.4)
-- PostgreSQL/PostGIS (tested with 10.2/2.4.2)
-- GDAL (for loading data to PostgreSQL, tested with 2.2.3)
+- Python (tested with v3.6+)
+- PostgreSQL/PostGIS (tested with v10.5/2.5)
+- GDAL (tested with v2.4.0)
 
 ## Installation
 
