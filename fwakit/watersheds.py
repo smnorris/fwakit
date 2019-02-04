@@ -45,7 +45,8 @@ def points_to_watersheds(ref_table, ref_id, out_table, dissolve=False, db=None):
     assessment watersheds as the first step of selection rather than building
     everything from scratch.
     """
-
+    # lower case ids only
+    ref_id = ref_id.lower()
     # first, collect first order watersheds upstream of points
     points_to_prelim_watersheds(ref_table, ref_id, out_table)
 
@@ -103,6 +104,8 @@ def points_to_prelim_watersheds(ref_table, ref_id, out_table, dissolve=False, db
     )
     if not db:
         db = fwa.util.connect()
+    # lower case ids only
+    ref_id = ref_id.lower()
     # We could wrap all of the sql below that collects the watershed polys into one
     # query using CTE, but unfortunately performance degrades - probably due to this:
     # https://blog.2ndquadrant.com/postgresql-ctes-are-optimization-fences/
@@ -263,6 +266,9 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
     watershed is cut at the line defined by the closest point on each side of the
     waterbody to the point location in the waterbody.
     """
+    # lower case ids only
+    ref_id = ref_id.lower()
+
     log('Adding first order watershed in which points lie to %s' %
         (prelim_wsd_table)
     )
@@ -494,6 +500,9 @@ def add_wsdrefine(prelim_wsd_table, ref_id, db=None):
     Add local watersheds refined by cut method and dem method to the prelim watersheds
     table
     """
+    # lower case ids only
+    ref_id = ref_id.lower()
+
     if not db:
         db = fwa.util.connect()
     # watersheds refined by DEM are not always clean. Inserted based on an intersect
@@ -530,9 +539,10 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
     1. For points inside of BC, contributing areas outside of BC
     2. Point locations outside of BC
     """
+    # lower case ids only
+    ref_id = ref_id.lower()
     if not db:
         db = fwa.util.connect()
-
 
     # first, process points already loaded to reference table (in BC)
     for fwa_point_event in db[ref_table]:
