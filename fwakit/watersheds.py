@@ -22,7 +22,7 @@ from fwakit.util import log
 
 def filter_bounds(in_file, prop, val):
     with fiona.open(in_file) as src:
-        filtered = filter(lambda f: f['properties'][prop]==val, src)
+        filtered = filter(lambda f: f["properties"][prop] == val, src)
         xs = []
         ys = []
         for j, feat in enumerate(filtered):
@@ -30,7 +30,7 @@ def filter_bounds(in_file, prop, val):
             xs.extend([w, e])
             ys.extend([s, n])
         w, s, e, n = (min(xs), min(ys), max(xs), max(ys))
-        return[w, s, e, n]
+        return [w, s, e, n]
 
 
 def points_to_watersheds(ref_table, ref_id, out_table, dissolve=False, db=None):
@@ -65,17 +65,20 @@ def points_to_watersheds(ref_table, ref_id, out_table, dissolve=False, db=None):
         # create temp output
         sql = """CREATE TEMPORARY TABLE wsd_agg
                  (LIKE {out_table})
-              """.format(out_table=out_table)
+              """.format(
+            out_table=out_table
+        )
         db.execute(sql)
         # get ids to iterate through
         sql = """SELECT DISTINCT {id}
                  FROM {ref_table}
                  ORDER BY {id}
-               """.format(id=ref_id,
-                          ref_table=ref_table)
+               """.format(
+            id=ref_id, ref_table=ref_table
+        )
         for record in db.query(sql).fetchall():
             site = record[ref_id]
-            log('Aggregating '+str(site))
+            log("Aggregating " + str(site))
             # run the clip/intersect
             sql = """INSERT INTO wsd_agg
                      SELECT {ref_id},
@@ -86,21 +89,28 @@ def points_to_watersheds(ref_table, ref_id, out_table, dissolve=False, db=None):
                     INNER JOIN {out_table} b
                     ON ST_Intersects(a.geom, b.geom)
                     WHERE {ref_id} = %s
-              """.format(ref_id=ref_id, out_table=out_table)
+              """.format(
+                ref_id=ref_id, out_table=out_table
+            )
             db.execute(sql, (site,))
         # move the aggregated data over into the output table
         db[out_table].drop()
-        db.execute("""CREATE TABLE {out_table} AS
+        db.execute(
+            """CREATE TABLE {out_table} AS
                       SELECT * FROM wsd_agg
-                   """.format(out_table=out_table))
+                   """.format(
+                out_table=out_table
+            )
+        )
         # re-index the output
         db[out_table].create_index([ref_id])
         db[out_table].create_index_geom()
 
 
 def points_to_prelim_watersheds(ref_table, ref_id, out_table, dissolve=False, db=None):
-    log('Creating %s, first order watersheds upstream of locations in %s' %
-        (out_table, ref_table)
+    log(
+        "Creating %s, first order watersheds upstream of locations in %s"
+        % (out_table, ref_table)
     )
     if not db:
         db = fwa.util.connect()
@@ -156,7 +166,9 @@ def points_to_prelim_watersheds(ref_table, ref_id, out_table, dissolve=False, db
         ON wsd.waterbody_key = l.waterbody_key
         LEFT OUTER JOIN whse_basemapping.fwa_manmade_waterbodies_poly wb
         ON wsd.waterbody_key = wb.waterbody_key
-    """.format(ref_table=ref_table, pk=ref_id)
+    """.format(
+        ref_table=ref_table, pk=ref_id
+    )
     db.execute(sql)
     # The above prelim query selects all watershed polygons with watershed codes
     # greater than the codes of the poly in which the point lies. In some cases
@@ -188,16 +200,26 @@ def points_to_prelim_watersheds(ref_table, ref_id, out_table, dissolve=False, db
       ) AS lr
     INNER JOIN whse_basemapping.fwa_watersheds_poly_sp w
     ON lr.waterbody_key = w.waterbody_key
-    """.format(out_table=out_table, pk=ref_id)
+    """.format(
+        out_table=out_table, pk=ref_id
+    )
     db.execute(sql)
     db[out_table].create_index([ref_id])
     db[out_table].create_index_geom()
 
     # add a column that notes how the watershed was derived
-    db.execute("""ALTER TABLE {out_table} ADD COLUMN source text
-               """.format(out_table=out_table))
-    db.execute("""UPDATE {out_table} SET source = 'fwa_watersheds_poly_sp'
-               """.format(out_table=out_table))
+    db.execute(
+        """ALTER TABLE {out_table} ADD COLUMN source text
+               """.format(
+            out_table=out_table
+        )
+    )
+    db.execute(
+        """UPDATE {out_table} SET source = 'fwa_watersheds_poly_sp'
+               """.format(
+            out_table=out_table
+        )
+    )
 
 
 def get_refine_method(fwa_point_event, db=None):
@@ -207,10 +229,10 @@ def get_refine_method(fwa_point_event, db=None):
     watersheds on waterbodies if the point is quite close to the edge.
     """
     refinement_thresholds = {
-        'top': 100,
-        'top_with_waterbody': 0,
-        'bottom': 50,
-        'bottom_with_waterbody': 0
+        "top": 100,
+        "top_with_waterbody": 0,
+        "bottom": 50,
+        "bottom_with_waterbody": 0,
     }
     if not db:
         db = fwa.util.connect()
@@ -226,34 +248,34 @@ def get_refine_method(fwa_point_event, db=None):
             LEFT OUTER JOIN whse_basemapping.fwa_waterbodies wb
             ON s.waterbody_key = wb.waterbody_key
             WHERE linear_feature_id = %s"""
-    waterbody_key = db.query(sql, fwa_point_event['linear_feature_id']).fetchone()[0]
-    sql = fwa.queries['wsdrefine_length_to_top_bottom']
+    waterbody_key = db.query(sql, fwa_point_event["linear_feature_id"]).fetchone()[0]
+    sql = fwa.queries["wsdrefine_length_to_top_bottom"]
     sql = text(sql)
     length_to_top, length_to_bottom = db.engine.execute(
         sql,
-        blue_line_key=fwa_point_event['blue_line_key'],
-        downstream_route_measure=fwa_point_event['downstream_route_measure'],
-        linear_feature_id=fwa_point_event['linear_feature_id'],
-        wscode_ltree=str(fwa_point_event['wscode_ltree']),
-        localcode_ltree=str(fwa_point_event['localcode_ltree'])
+        blue_line_key=fwa_point_event["blue_line_key"],
+        downstream_route_measure=fwa_point_event["downstream_route_measure"],
+        linear_feature_id=fwa_point_event["linear_feature_id"],
+        wscode_ltree=str(fwa_point_event["wscode_ltree"]),
+        localcode_ltree=str(fwa_point_event["localcode_ltree"]),
     ).fetchone()
     log("l_top: %s, l_bottom %s" % (length_to_top, length_to_bottom), level=lg.DEBUG)
     # modify the thresholds if on a waterbody
     if waterbody_key:
-        refinement_thresholds['top'] = refinement_thresholds['top_with_waterbody']
-        refinement_thresholds['bottom'] = refinement_thresholds['bottom_with_waterbody']
+        refinement_thresholds["top"] = refinement_thresholds["top_with_waterbody"]
+        refinement_thresholds["bottom"] = refinement_thresholds["bottom_with_waterbody"]
 
     # first, if the point is less than threshold to top, do not include the watershed
-    if (length_to_top < refinement_thresholds['top']):
-        return 'DROP'
+    if length_to_top < refinement_thresholds["top"]:
+        return "DROP"
     # if the point is less than threshold to bottom, do not attempt to refine
-    elif length_to_bottom < refinement_thresholds['bottom']:
+    elif length_to_bottom < refinement_thresholds["bottom"]:
         return None
     # if we are refining, refine based on whether or not point is on waterbody
     elif waterbody_key:
-        return 'CUT'
+        return "CUT"
     elif not waterbody_key:
-        return 'DEM'
+        return "DEM"
 
 
 def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
@@ -269,33 +291,33 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
     # lower case ids only
     ref_id = ref_id.lower()
 
-    log('Adding first order watershed in which points lie to %s' %
-        (prelim_wsd_table)
-    )
+    log("Adding first order watershed in which points lie to %s" % (prelim_wsd_table))
     if not db:
         db = fwa.util.connect()
 
     # create intermediate tables, required so that we can process all the DEM refinements
     # in arcgis separately. Ensure the primary key is the right type by selecting from
     # source table.
-    db['public.wsdrefine_cut'].drop()
-    db['public.wsdrefine_hexwsd'].drop()
-    db['public.wsdrefine_streams'].drop()
+    db["public.wsdrefine_cut"].drop()
+    db["public.wsdrefine_hexwsd"].drop()
+    db["public.wsdrefine_streams"].drop()
     sql = """CREATE TABLE public.wsdrefine_cut AS
              SELECT
                {ref_id},
                NULL::geometry(MultiPolygon, 3005) as geom
              FROM {ref_table} LIMIT 0
-          """.format(ref_id=ref_id,
-                     ref_table=ref_table)
+          """.format(
+        ref_id=ref_id, ref_table=ref_table
+    )
     db.execute(sql)
     sql = """CREATE TABLE public.wsdrefine_hexwsd AS
              SELECT
                {ref_id},
                NULL::geometry(MultiPolygon, 3005) as geom
              FROM {ref_table} LIMIT 0
-          """.format(ref_id=ref_id,
-                     ref_table=ref_table)
+          """.format(
+        ref_id=ref_id, ref_table=ref_table
+    )
     db.execute(sql)
     sql = """CREATE TABLE public.wsdrefine_streams AS
              SELECT
@@ -304,71 +326,86 @@ def add_local_watersheds(ref_table, ref_id, prelim_wsd_table, db=None):
                NULL::integer as blue_line_key,
                NULL::geometry(MultiLineString, 3005) as geom
              FROM {ref_table} LIMIT 0
-          """.format(ref_id=ref_id,
-                     ref_table=ref_table)
+          """.format(
+        ref_id=ref_id, ref_table=ref_table
+    )
     db.execute(sql)
     for fwa_point_event in db[ref_table]:
         ref_id_value = fwa_point_event[ref_id]
         refine_method = get_refine_method(fwa_point_event)
 
         # If watershed is on a waterbody and inside our distance tolerances, cut it
-        if refine_method == 'CUT':
-            log('Site {w}: refining watershed - cutting at river'.format(w=ref_id_value))
+        if refine_method == "CUT":
+            log(
+                "Site {w}: refining watershed - cutting at river".format(w=ref_id_value)
+            )
 
             # cut the polys
-            sql = fwa.queries['wsdrefine_river_wsd_cut']
-            sql = db.build_query(sql, {'ref_table': ref_table,
-                                       'ref_id': ref_id})
+            sql = fwa.queries["wsdrefine_river_wsd_cut"]
+            sql = db.build_query(sql, {"ref_table": ref_table, "ref_id": ref_id})
             db.execute(sql, (ref_id_value,))
 
             # remove the polys that have been cut from the prelim wsd table,
             # there are more than just the poly in which the point lies
-            sql = fwa.queries['wsdrefine_river_wsd_cut_remove']
-            sql = db.build_query(sql, {'ref_table': ref_table,
-                                       'ref_id': ref_id,
-                                       'prelim': prelim_wsd_table})
+            sql = fwa.queries["wsdrefine_river_wsd_cut_remove"]
+            sql = db.build_query(
+                sql,
+                {"ref_table": ref_table, "ref_id": ref_id, "prelim": prelim_wsd_table},
+            )
             db.execute(sql, (ref_id_value, ref_id_value))
             # check that something valid was created, if the split was unsuccessful use DEM
             sql = """
                   SELECT {id}
                   FROM public.wsdrefine_cut
                   WHERE {id} = %s
-                  AND ST_IsValid(geom)""".format(id=ref_id)
+                  AND ST_IsValid(geom)""".format(
+                id=ref_id
+            )
             result = db.query(sql, (ref_id_value)).fetchone()
             if not result[0]:
-                log('Site {w}: could not cut at river, using DEM')
-                refine_method = 'DEM'
+                log("Site {w}: could not cut at river, using DEM")
+                refine_method = "DEM"
 
         # If not on a waterbody and inside our distance tolerances, refine wsd with DEM
         # to make processing later with arcgis easier, just generate the inputs required
-        if refine_method == 'DEM':
-            log('Site {w}: prepping to refine with DEM'.format(w=ref_id_value))
+        if refine_method == "DEM":
+            log("Site {w}: prepping to refine with DEM".format(w=ref_id_value))
 
             # create hex cutout of watershed
-            sql = db.build_query(fwa.queries['wsdrefine_hexwsd'],
-                                 {'ref_table': ref_table,
-                                  'ref_id': ref_id})
+            sql = db.build_query(
+                fwa.queries["wsdrefine_hexwsd"],
+                {"ref_table": ref_table, "ref_id": ref_id},
+            )
             db.execute(sql, (ref_id_value))
 
             # extract stream upstream of the location
-            sql = db.build_query(fwa.queries['wsdrefine_streams'],
-                                 {'ref_table': ref_table,
-                                  'ref_id': ref_id})
+            sql = db.build_query(
+                fwa.queries["wsdrefine_streams"],
+                {"ref_table": ref_table, "ref_id": ref_id},
+            )
             db.execute(sql, (ref_id_value,))
 
         elif refine_method is None:
-            log('Site {w}: inserting unrefined 1st order watershed'.format(w=ref_id_value))
+            log(
+                "Site {w}: inserting unrefined 1st order watershed".format(
+                    w=ref_id_value
+                )
+            )
             # just insert the watershed where the point lies *as is*
-            sql = fwa.queries['wsdrefine_norefine']
-            sql = db.build_query(fwa.queries['wsdrefine_norefine'],
-                                 {'ref_table': ref_table,
-                                  'ref_id': ref_id,
-                                  'out_table': prelim_wsd_table})
+            sql = fwa.queries["wsdrefine_norefine"]
+            sql = db.build_query(
+                fwa.queries["wsdrefine_norefine"],
+                {
+                    "ref_table": ref_table,
+                    "ref_id": ref_id,
+                    "out_table": prelim_wsd_table,
+                },
+            )
             db.execute(sql, (ref_id_value,))
 
-        elif refine_method == 'DROP':
+        elif refine_method == "DROP":
             # nothing to do
-            log('Site {w}: not inserting 1st order watershed'.format(w=ref_id_value))
+            log("Site {w}: not inserting 1st order watershed".format(w=ref_id_value))
 
 
 def wsdrefine_dem(in_wsds, in_streams, in_points, ref_id):
@@ -377,16 +414,19 @@ def wsdrefine_dem(in_wsds, in_streams, in_points, ref_id):
     # find unique IDs in hex watershed shapefile
 
     with fiona.open(in_wsds) as src:
-        id_type = src.schema['properties'][ref_id]
-        stations = sorted(list(set([f['properties'][ref_id] for f in src])))
+        id_type = src.schema["properties"][ref_id]
+        stations = sorted(list(set([f["properties"][ref_id] for f in src])))
 
-        schema = {
-            'geometry': 'Polygon',
-            'properties': {ref_id: id_type}
-        }
+        schema = {"geometry": "Polygon", "properties": {ref_id: id_type}}
 
         # create destination shapefile and open
-        with fiona.open('data/wsdrefine_dem.shp', 'w', driver='ESRI Shapefile', crs=src.crs, schema=schema) as dst:
+        with fiona.open(
+            "data/wsdrefine_dem.shp",
+            "w",
+            driver="ESRI Shapefile",
+            crs=src.crs,
+            schema=schema,
+        ) as dst:
             # loop through each watershed, insert new catchment
             for station_id in stations:
                 log("Refining watershed for point {}".format(station_id))
@@ -396,12 +436,14 @@ def wsdrefine_dem(in_wsds, in_streams, in_points, ref_id):
                 # not return multipolygons - dump each to file and handle
                 # aggregation elsewhere because some features seem to crash python
                 # even when valid
-                catchment_polys = create_catchment(ref_id, station_id, pourpoint_coord, bounds)
+                catchment_polys = create_catchment(
+                    ref_id, station_id, pourpoint_coord, bounds
+                )
                 for catchment in catchment_polys:
                     rec = {}
-                    rec['geometry'] = geometry.mapping(catchment)
-                    rec['id'] = str(station_id)
-                    rec['properties'] = {ref_id: station_id}
+                    rec["geometry"] = geometry.mapping(catchment)
+                    rec["id"] = str(station_id)
+                    rec["properties"] = {ref_id: station_id}
                     dst.write(rec)
 
 
@@ -417,23 +459,25 @@ def create_catchment(id_column, id_value, pourpoint_coord, bounds):
     ymax = bounds[3] + expansion
     expanded_bounds = (xmin, ymin, xmax, ymax)
 
-    bcdata.get_dem(expanded_bounds, "dem.tif")
+    bcdata.get_dem(expanded_bounds, "dem_{}.tif".format(str(id_value)))
 
-    grid = Grid.from_raster("dem.tif", data_name='dem')
+    grid = Grid.from_raster("dem_{}.tif".format(str(id_value)), data_name="dem")
 
     # load FWA streams within area of interest and rasterize
     with fiona.open("data/wsdrefine_streams.shp") as src:
-        stream_features = list(filter(lambda f: f['properties'][id_column] == id_value, src))
+        stream_features = list(
+            filter(lambda f: f["properties"][id_column] == id_value, src)
+        )
 
     # convert stream geojson features to shapely shapes
-    stream_shapes = [geometry.shape(f['geometry']) for f in stream_features]
+    stream_shapes = [geometry.shape(f["geometry"]) for f in stream_features]
 
     # convert shapes to raster
     stream_raster = features.rasterize(
         ((g, 1) for g in stream_shapes),
         out_shape=grid.shape,
         transform=grid.affine,
-        all_touched=False
+        all_touched=False,
     )
     stream_raster = skeletonize(stream_raster).astype(np.uint8)
 
@@ -441,7 +485,7 @@ def create_catchment(id_column, id_value, pourpoint_coord, bounds):
     mask = stream_raster.astype(np.bool)
 
     # Create a view onto the DEM array
-    dem = grid.view('dem', dtype=np.float64, nodata=np.nan)
+    dem = grid.view("dem", dtype=np.float64, nodata=np.nan)
 
     # Blur mask using a gaussian filter
     blurred_mask = ndimage.filters.gaussian_filter(mask.astype(np.float64), sigma=2.5)
@@ -456,26 +500,26 @@ def create_catchment(id_column, id_value, pourpoint_coord, bounds):
     mask = blurred_mask
 
     # Create a view onto the DEM array
-    dem = grid.view('dem', dtype=np.float64, nodata=np.nan)
+    dem = grid.view("dem", dtype=np.float64, nodata=np.nan)
 
     # Subtract dz where mask is nonzero
-    dem[(mask > 0)] -= dz*mask[(mask > 0)]
+    dem[(mask > 0)] -= dz * mask[(mask > 0)]
 
     # Smooth the mask in an effort to make sure the DEM goes downhill
     # where the stream is present
-    #dem[(mask > 0)] = ndimage.filters.minimum_filter(dem, 2)[(mask > 0)]
+    # dem[(mask > 0)] = ndimage.filters.minimum_filter(dem, 2)[(mask > 0)]
 
     # defining the crs used improves results
-    new_crs = pyproj.Proj('+init=epsg:3005')
+    new_crs = pyproj.Proj("+init=epsg:3005")
 
     #         N    NE    E    SE    S    SW    W    NW
-    dirmap = (64,  128,  1,   2,    4,   8,    16,  32)
+    dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
 
     # fill / resolve flats / flow direction / accumulation
-    grid.fill_depressions(data=dem, out_name='flooded_dem')
-    grid.resolve_flats(data='flooded_dem', out_name='inflated_dem')
-    grid.flowdir(data='inflated_dem', out_name='dir', dirmap=dirmap, as_crs=new_crs)
-    grid.accumulation(data='dir', dirmap=dirmap, out_name='acc', apply_mask=False)
+    grid.fill_depressions(data=dem, out_name="flooded_dem")
+    grid.resolve_flats(data="flooded_dem", out_name="inflated_dem")
+    grid.flowdir(data="inflated_dem", out_name="dir", dirmap=dirmap, as_crs=new_crs)
+    grid.accumulation(data="dir", dirmap=dirmap, out_name="acc", apply_mask=False)
 
     # snap pour point to higher accumulation cells
     # (in theory, this shouldn't really be necesssary after burning in the
@@ -485,11 +529,19 @@ def create_catchment(id_column, id_value, pourpoint_coord, bounds):
     x, y = xy_snapped[0][0], xy_snapped[0][1]
 
     # create catchment
-    grid.catchment(data='dir', x=x, y=y, dirmap=dirmap, out_name='catch',
-                   recursionlimit=15000, xytype='label', nodata_out=0)
+    grid.catchment(
+        data="dir",
+        x=x,
+        y=y,
+        dirmap=dirmap,
+        out_name="catch",
+        recursionlimit=15000,
+        xytype="label",
+        nodata_out=0,
+    )
 
     # Clip the bounding box to the catchment
-    grid.clip_to('catch')
+    grid.clip_to("catch")
 
     # polygonize and return a list of polygon shapely objects
     return [geometry.shape(shape) for shape, value in grid.polygonize()]
@@ -517,8 +569,9 @@ def add_wsdrefine(prelim_wsd_table, ref_id, db=None):
             ON h.{ref_id} = d.{ref_id}
             AND ST_Intersects(h.geom, d.geom)
             GROUP BY h.{ref_id}
-          """.format(prelim_wsd_table=prelim_wsd_table,
-                     ref_id=ref_id)
+          """.format(
+        prelim_wsd_table=prelim_wsd_table, ref_id=ref_id
+    )
     db.execute(sql)
     sql = """INSERT INTO {prelim_wsd_table} ({ref_id}, source, geom)
              SELECT
@@ -526,8 +579,9 @@ def add_wsdrefine(prelim_wsd_table, ref_id, db=None):
               'CUT' as source,
              geom as geom
             FROM public.wsdrefine_cut c
-          """.format(prelim_wsd_table=prelim_wsd_table,
-                     ref_id=ref_id)
+          """.format(
+        prelim_wsd_table=prelim_wsd_table, ref_id=ref_id
+    )
     db.execute(sql)
 
 
@@ -549,16 +603,18 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
         ref_id_value = fwa_point_event[ref_id]
 
         # Do areas outside of BC contribute to the point (not including Alaska)
-        db['public.wsdrefine_borderpts'].drop()
+        db["public.wsdrefine_borderpts"].drop()
         db.execute(
-            fwa.queries['upstream_border_crossing'],
-            (str(fwa_point_event['wscode_ltree']),
-             str(fwa_point_event['localcode_ltree']))
+            fwa.queries["upstream_border_crossing"],
+            (
+                str(fwa_point_event["wscode_ltree"]),
+                str(fwa_point_event["localcode_ltree"]),
+            ),
         )
-        border_points = [r for r in db['public.wsdrefine_borderpts'].all()]
+        border_points = [r for r in db["public.wsdrefine_borderpts"].all()]
         if len(border_points):
             # If streams cross border to lower 48, use NHD WBD
-            if border_points[0]['border'] == 'USA_49':
+            if border_points[0]["border"] == "USA_49":
                 log("processing border streams on 49")
                 sql = """WITH RECURSIVE walkup (huc12, geom) AS
                     (
@@ -578,8 +634,9 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
                       'NHD HUC12' AS source,
                       ST_Union(geom)
                     FROM walkup
-                """.format(out_table=out_table,
-                           ref_id=ref_id)
+                """.format(
+                    out_table=out_table, ref_id=ref_id
+                )
                 db.execute(sql, (ref_id_value))
             else:
                 log("processing border streams not on 49")
@@ -601,10 +658,10 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
                       'hybas_na_lev12_v1c' AS source,
                       ST_Union(geom)
                     FROM walkup
-                """.format(out_table=out_table,
-                           ref_id=ref_id)
+                """.format(
+                    out_table=out_table, ref_id=ref_id
+                )
                 db.execute(sql, (ref_id_value))
-
 
     # Attempt to process locations outside of BC (not aleady in the ref table)
     # use the API for this rather than the source data - it cuts off the watershed
@@ -617,24 +674,21 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
              LEFT OUTER JOIN {ref_table} b
              ON a.{ref_id} = b.{ref_id}
              WHERE b.{ref_id} IS NULL
-          """.format(ref_id=ref_id,
-                     point_table=point_table,
-                     ref_table=ref_table)
+          """.format(
+        ref_id=ref_id, point_table=point_table, ref_table=ref_table
+    )
     locations = db.query(sql)
     for location in locations:
         log("Site {}: searching for non-BC streams".format(str(location[ref_id])))
         comid, measure, index_dist = epa_waters.index_point(
-                                         location['x'],
-                                         location['y'],
-                                         150
-                                     )
-        log("    - found USA stream: comid: {com}, measure: {m}".format(
-            com=comid, m=measure))
-        wsd = epa_waters.delineate_watershed(
-            location[ref_id],
-            comid,
-            measure
+            location["x"], location["y"], 150
         )
+        log(
+            "    - found USA stream: comid: {com}, measure: {m}".format(
+                com=comid, m=measure
+            )
+        )
+        wsd = epa_waters.delineate_watershed(location[ref_id], comid, measure)
         # Convert geojson to shapely object then insert into db
         if wsd:
             wsd = geometry.shape(geojson.loads(json.dumps(wsd)))
@@ -646,8 +700,9 @@ def add_ex_bc(point_table, ref_table, ref_id, out_table, db=None):
                  ST_Multi(ST_Transform(ST_GeomFromText(%s, 4326), 3005)),
                  'epa_waters'
                 )
-                """.format(out_table=out_table,
-                           ref_id=ref_id)
+                """.format(
+                out_table=out_table, ref_id=ref_id
+            )
             db.execute(sql, (location[ref_id], wsd.wkt))
         else:
-            log('    - unsupported location, no watershed generated')
+            log("    - unsupported location, no watershed generated")
