@@ -225,9 +225,10 @@ def points_to_prelim_watersheds(ref_table, ref_id, out_table, dissolve=False, db
 
 def get_refine_method(fwa_point_event, db=None):
     """
-    Whether refining of the bottom first order wateshed is required depends on whether
-    the location falls on a river/canal. It isn't worth the complexity of refining
-    watersheds on waterbodies if the point is quite close to the edge.
+    Whether refining of the bottom first order wateshed is required depends
+    on whether the location falls on a river/canal. It isn't worth the
+    complexity of refining watersheds on waterbodies if the point is quite
+    close to the edge.
     """
     refinement_thresholds = {
         "top": 100,
@@ -237,18 +238,28 @@ def get_refine_method(fwa_point_event, db=None):
     }
     if not db:
         db = fwa.util.connect()
-    # is the point on a lake, river or reservoir/canal?
-    sql = """SELECT
-              CASE
-                WHEN wb.waterbody_type IN ('L', 'R')
-                  THEN s.waterbody_key
-                WHEN wb.waterbody_type = 'X' AND wb.feature_code = 'GA03950000'
-                  THEN s.waterbody_key
-              END AS waterbody_key
-            FROM whse_basemapping.fwa_stream_networks_sp s
-            LEFT OUTER JOIN whse_basemapping.fwa_waterbodies wb
-            ON s.waterbody_key = wb.waterbody_key
-            WHERE linear_feature_id = %s"""
+    # Is the point on a lake, river or reservoir/canal?
+    # TODO -  why are reservoirs restricted to just canals (GA03950000) when
+    # lakes are included??
+    sql = """
+        SELECT
+            s.waterbody_key,
+            COALESCE(wb.waterbody_type, r.waterbody_type) AS waterbody_type
+        FROM whse_basemapping.fwa_stream_networks_sp s
+        LEFT OUTER JOIN
+            (SELECT *
+             FROM whse_basemapping.fwa_waterbodies
+             WHERE waterbody_type IN ('L', 'R')
+            ) wb
+        ON s.waterbody_key = wb.waterbody_key
+        LEFT OUTER JOIN
+            (SELECT waterbody_key, waterbody_type, feature_code
+             FROM whse_basemapping.fwa_manmade_waterbodies_poly
+             WHERE waterbody_type = 'X'
+             AND feature_code = 'GA03950000'
+            ) r
+        ON s.waterbody_key = r.waterbody_key
+        WHERE s.linear_feature_id = %s"""
     waterbody_key = db.query(sql, fwa_point_event["linear_feature_id"]).fetchone()[0]
     sql = fwa.queries["wsdrefine_length_to_top_bottom"]
     sql = text(sql)
