@@ -41,16 +41,17 @@ def points_to_watersheds(ref_table, ref_id, out_table, dissolve=False, db=None):
        - wscode_ltree
        - localcode_ltree
 
-    Note: this could perhaps be sped up significantly by using the pre-aggregated
-    assessment watersheds as the first step of selection rather than building
-    everything from scratch.
+    Note: this could perhaps be sped up significantly by using the
+    pre-aggregated assessment watersheds as the first step of selection rather
+    than building everything from scratch.
     """
     # lower case ids only
     ref_id = ref_id.lower()
     # first, collect first order watersheds upstream of points
     points_to_prelim_watersheds(ref_table, ref_id, out_table)
 
-    # add the first order watersheds on which the points lie (and refine if necessary)
+    # add the first order watersheds on which the points lie (and refine if
+    # necessary)
     add_local_watersheds(ref_table, ref_id, out_table)
 
     # Dissolve if specified
