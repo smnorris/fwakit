@@ -298,3 +298,16 @@ def load_queries():
         queries[key] = pkg_resources.resource_string(__name__,
                                                      os.path.join("sql", f)).decode('utf-8')
     return queries
+
+
+def execute_parallel_wsg(sql, wsg, db_url=None):
+    """Execute sql for specified wsg using a non-pooled, non-parallel conn
+    """
+    if not db_url:
+        db_url = os.environ['FWA_DB']
+    # specify multiprocessing when creating to disable connection pooling
+    db = pgdata.connect(db_url, multiprocessing=True)
+    # Turn off parallel execution for this connection, because we are
+    # handling the parallelization ourselves
+    db.execute("SET max_parallel_workers_per_gather = 0")
+    db.execute(sql, wsg)

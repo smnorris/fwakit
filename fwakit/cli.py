@@ -6,6 +6,8 @@ except ImportError:
      from urlparse import urljoin
 
 import os
+import multiprocessing
+from functools import partial
 
 import click
 
@@ -266,6 +268,35 @@ def clean(layers, skiplayers, db_url):
 
     # add CDB_MakeHexagon function
     db.execute(fwa.queries['CDB_MakeHexagon'])
+
+
+@click.option('--db_url', '-db', help='FWA database', envvar='FWA_DB')
+def populate_gradient(db_url, n_processes):
+    """ FWA Gradient column is empty, calculate it
+
+    With millions of updates, this is an expensive operation. Run in parallel
+    to try and speed things up.
+
+    Todo: these calculations should take place at the same time as populating the ltree columns
+    https://dba.stackexchange.com/questions/52517/best-way-to-populate-a-new-column-in-a-large-table/52531#52531
+    """
+    db = fwa.util.connect(db_url=db_url)
+    groups = fwa.list_groups(db=db)
+
+    # load the query string
+    sql = fwa.queries['populate_gradient']
+
+    # run updates on each group in parallel
+    func = partial(fwa.util.execute_parallel_wsg, sql, db_url=db_url)
+
+    # set number of processes 1-5, depending on how many cores available
+    # (the best number will depend on system resources and db settings, this
+    # is just a stab in the dark)
+    n_processes = max(1, min(5, multiprocessing.cpu_count() - 1))
+    pool = multiprocessing.Pool(processes=n_processes)
+    pool.map(func, groups)
+    pool.close()
+    pool.join()
 
 
 @cli.command()
