@@ -300,7 +300,7 @@ def load_queries():
     return queries
 
 
-def execute_parallel_wsg(sql, wsg, db_url=None):
+def execute_parallel_wsg(sql, wsg, db_url=None, n_subs=1):
     """Execute sql for specified wsg using a non-pooled, non-parallel conn
     """
     if not db_url:
@@ -310,4 +310,5 @@ def execute_parallel_wsg(sql, wsg, db_url=None):
     # Turn off parallel execution for this connection, because we are
     # handling the parallelization ourselves
     db.execute("SET max_parallel_workers_per_gather = 0")
-    db.execute(sql, wsg)
+    #db.execute(sql, wsg)
+    db.execute(sql, (wsg,) * n_subs)
