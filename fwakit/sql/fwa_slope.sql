@@ -18,7 +18,7 @@ IF measure_down > measure_up THEN
   RAISE EXCEPTION 'Invalid measure - measure_up must be greater than measure_down';
 END IF;
 
-SELECT
+RETURN
   ROUND(
    ((fwa_elevation(blkey, measure_up) - fwa_elevation(blkey, measure_down))
      /  ABS(measure_up - measure_down))::numeric * 100, 2);
