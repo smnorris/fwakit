@@ -7,12 +7,21 @@ CREATE OR REPLACE FUNCTION fwa_slope(
     measure_up double precision
 )
 
-RETURNS numeric AS $$
+RETURNS numeric
+
+
+AS $$
+
+BEGIN
+
+IF measure_down > measure_up THEN
+  RAISE EXCEPTION 'Invalid measure - measure_up must be greater than measure_down';
+END IF;
 
 SELECT
   ROUND(
    ((fwa_elevation(blkey, measure_up) - fwa_elevation(blkey, measure_down))
      /  ABS(measure_up - measure_down))::numeric * 100, 2);
 
-$$
-language 'sql' immutable strict parallel safe;
+END
+$$ LANGUAGE 'plpgsql' IMMUTABLE STRICT PARALLEL SAFE;
