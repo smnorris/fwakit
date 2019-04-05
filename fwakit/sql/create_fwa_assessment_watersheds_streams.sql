@@ -22,7 +22,6 @@ SELECT
 FROM whse_basemapping.fwa_stream_networks_sp s
 INNER JOIN whse_basemapping.fwa_assessment_watersheds_poly p
 ON s.watershed_group_code = p.watershed_group_code
-AND s.wscode_ltree @> p.wscode_ltree
 AND ST_Intersects(s.geom, p.geom)
 AND NOT ST_Touches(s.geom, p.geom)
 WHERE s.edge_type != 6010;
@@ -44,7 +43,6 @@ SELECT DISTINCT ON (linear_feature_id)
 FROM whse_basemapping.fwa_stream_networks_sp s
 INNER JOIN whse_basemapping.fwa_assessment_watersheds_poly p
 ON s.watershed_group_code = p.watershed_group_code
-AND s.wscode_ltree @> p.wscode_ltree
 AND ST_Intersects(s.geom, p.geom)
 AND ST_Touches(s.geom, p.geom)
 WHERE s.edge_type != 6010
