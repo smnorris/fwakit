@@ -22,6 +22,8 @@ fwakit=# SELECT FWW_UpstreamWSC('100.100000'::ltree, '100.100000'::ltree,
  t
 (1 row)
 
+Note that this function currently has a very large performance cost -
+the indexes may not be used.
 */
 
 CREATE OR REPLACE FUNCTION fwa_upstreamwsc(
