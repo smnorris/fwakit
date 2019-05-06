@@ -23,7 +23,7 @@ fwakit=# SELECT FWW_UpstreamWSC('100.100000'::ltree, '100.100000'::ltree,
 (1 row)
 
 Note that this function currently has a very large performance cost -
-the indexes may not be used.
+the indexes may not be used - it does not get 'inlined'
 */
 
 CREATE OR REPLACE FUNCTION fwa_upstreamwsc(
@@ -35,34 +35,32 @@ CREATE OR REPLACE FUNCTION fwa_upstreamwsc(
 
 RETURNS boolean AS $$
 
-SELECT
-  CASE
-  -- First, consider the simple case, where watershed code and local code of (a)
-  -- are equivalent. Return TRUE for all records in (b) that are children of (a)
-  WHEN
-    wscode_ltree_a = localcode_ltree_a AND
-    wscode_ltree_b <@ wscode_ltree_a
-  THEN TRUE
-  -- The more complicated case is where watershed code and local code of (a) are
-  -- not equal, then some more comparison is required:
-  WHEN
-    wscode_ltree_a != localcode_ltree_a AND
-    -- b must still be a child of a
-    wscode_ltree_b <@ wscode_ltree_a AND
+SELECT true
+WHERE
+  -- Simple case, where watershed code and local code of (a) are equivalent. -- Return TRUE for all records in (b) that are children of (a)
+    (wscode_ltree_a = localcode_ltree_a AND
+    wscode_ltree_b <@ wscode_ltree_a)
+
+  -- Where watershed code and local code of (a) are not equivalent, more
+  -- comparison is required - the local codes must be compared:
+  OR
     (
-     -- tributaries: watershed code of b > local code of a, and watershed code
-     -- of b is not a child of local code a
-        (wscode_ltree_b > localcode_ltree_a AND NOT
-         wscode_ltree_b <@ localcode_ltree_a)
-        OR
-     -- side channels: b is the same watershed code as a, but with larger
-     -- local code
-        (wscode_ltree_b = wscode_ltree_a AND
-         localcode_ltree_b >= localcode_ltree_a)
-    )
-  THEN TRUE
-  ELSE FALSE
-END
+      wscode_ltree_a != localcode_ltree_a
+      AND
+      wscode_ltree_b <@ wscode_ltree_a
+      AND
+      (
+       -- tributaries: watershed code of b > local code of a, and watershed code
+       -- of b is not a child of local code a
+          (wscode_ltree_b > localcode_ltree_a AND NOT
+           wscode_ltree_b <@ localcode_ltree_a)
+          OR
+       -- side channels, higher up on the same stream:
+       -- b is the same watershed code as a, but with larger local code
+          (wscode_ltree_b = wscode_ltree_a AND
+          localcode_ltree_b >= localcode_ltree_a)
+      )
+  )
 
 $$
-language 'sql' immutable strict parallel safe;
+language 'sql' immutable parallel safe;
