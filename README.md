@@ -1,5 +1,7 @@
 # fwakit
 
+**DEPRECATED - use [fwapg](https://github.com/smnorris/fwapg) instead**
+
 Python/PostgreSQL tools for working with British Columbia's [Freshwater Atlas](https://www2.gov.bc.ca/gov/content/data/geographic-data-services/topographic-data/freshwater)
 
 ## Requirements
